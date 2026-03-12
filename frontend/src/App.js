@@ -5,7 +5,7 @@ import {
   PieChart, Pie, Cell, Legend
 } from "recharts";
 
-const API = "http://localhost:8000";
+const API = "https://rajasthan-cgwj.onrender.com";
 
 const SOURCES = [
   { id: "igod",       name: "IGOD Portal",          icon: "🏛️", color: "#f97316", url: "https://igod.gov.in/sg/RJ/SPMA/organizations",         desc: "Govt Online Directory" },
