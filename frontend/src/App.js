@@ -1,16 +1,3 @@
-/**
- * Rajasthan AI Chief of Staff Dashboard — v3
- * =============================================
- * 100% data-driven. Every value rendered in the UI (names, counts, categories,
- * descriptions, benefits, URLs, alerts) comes from the /aggregate API endpoint,
- * which itself is built entirely from live scraper output.
- *
- * The only "constants" here are:
- *  - UI colour palette
- *  - Category → icon mapping (purely cosmetic)
- *  - Source metadata (names / colours for the 4 known scrapers)
- */
-
 import { useState, useEffect, useCallback } from "react";
 import axios from "axios";
 import InsightsEngine from "./InsightsEngine";
@@ -101,6 +88,7 @@ function EmptyState({ onScrape }) {
       </div>
       <button onClick={onScrape} style={{ background:"#f97316", color:"white",
         borderRadius:12, padding:"13px 32px", fontWeight:800, fontSize:15,
+        border:"none", cursor:"pointer",
         boxShadow:"0 4px 20px #f9731650" }}>
         ⚡ Scrape All 4 Sources
       </button>
@@ -166,7 +154,8 @@ function DashboardTab({ agg, srcStatus, onScrapeAll, onScrapeOne, scraping, scra
                 <button onClick={() => onScrapeOne(sid)} disabled={loading}
                   style={{ background: loading?"#e5e7eb":s.color+"15", color: loading?"#9ca3af":s.color,
                     border:`1px solid ${loading?"#e5e7eb":s.color+"30"}`,
-                    borderRadius:6, padding:"4px 10px", fontSize:11, fontWeight:700 }}>
+                    borderRadius:6, padding:"4px 10px", fontSize:11, fontWeight:700,
+                    cursor:loading?"not-allowed":"pointer" }}>
                   {loading ? "⟳" : "↺"}
                 </button>
               </div>
@@ -315,6 +304,7 @@ function SchemesTab({ agg, onScrapeAll }) {
               color: src===id ? "white" : "#374151",
               border:`1.5px solid ${src===id ? (s?.color||"#1f2937") : "#e5e7eb"}`,
               borderRadius:20, padding:"5px 14px", fontSize:12, fontWeight:600,
+              cursor:"pointer",
             }}>
               {id === "all" ? "All Sources" : `${s.icon} ${s.label}`}
             </button>
@@ -327,7 +317,7 @@ function SchemesTab({ agg, onScrapeAll }) {
         <button onClick={() => setCat("all")} style={{
           background: cat==="all" ? "#f97316" : "white", color: cat==="all" ? "white" : "#374151",
           border:`1.5px solid ${cat==="all" ? "#f97316" : "#e5e7eb"}`,
-          borderRadius:20, padding:"6px 16px", fontSize:13, fontWeight:600 }}>
+          borderRadius:20, padding:"6px 16px", fontSize:13, fontWeight:600, cursor:"pointer" }}>
           All
         </button>
         {allCats.map(c => (
@@ -335,7 +325,7 @@ function SchemesTab({ agg, onScrapeAll }) {
             background: cat===c ? "#1f2937" : "white", color: cat===c ? "white" : "#374151",
             border:`1.5px solid ${cat===c ? "#1f2937" : "#e5e7eb"}`,
             borderRadius:20, padding:"6px 14px", fontSize:12, fontWeight:600,
-            display:"flex", alignItems:"center", gap:5,
+            display:"flex", alignItems:"center", gap:5, cursor:"pointer",
           }}>
             <span>{CAT_ICON[c]||"📋"}</span> {c}
           </button>
@@ -575,23 +565,45 @@ function PortalsTab({ agg, onScrapeAll }) {
 // JJM coverage figures are real public data from JJM MIS (not scraped from these 4
 // sites, but cited transparently). Scheme counts are derived from live scraper data.
 const JJM_DISTRICTS = [
-  { name:"Jaipur",    pop:"68.0 L", coverage:84 },
-  { name:"Kota",      pop:"20.0 L", coverage:72 },
-  { name:"Jodhpur",   pop:"36.0 L", coverage:68 },
-  { name:"Udaipur",   pop:"30.0 L", coverage:63 },
-  { name:"Bikaner",   pop:"23.0 L", coverage:61 },
-  { name:"Ajmer",     pop:"25.0 L", coverage:59 },
-  { name:"Alwar",     pop:"36.0 L", coverage:54 },
-  { name:"Bhilwara",  pop:"24.0 L", coverage:51 },
-  { name:"Sikar",     pop:"26.0 L", coverage:49 },
-  { name:"Nagaur",    pop:"33.0 L", coverage:47 },
-  { name:"Barmer",    pop:"25.0 L", coverage:31 },
-  { name:"Jaisalmer", pop:"6.7 L",  coverage:38 },
-  { name:"Churu",     pop:"20.0 L", coverage:42 },
-  { name:"Dungarpur", pop:"13.0 L", coverage:55 },
+  { name:"Jaipur",       pop:"68.0 L", coverage:84 },
+  { name:"Jodhpur",      pop:"36.0 L", coverage:68 },
+  { name:"Alwar",        pop:"36.0 L", coverage:54 },
+  { name:"Nagaur",       pop:"33.0 L", coverage:47 },
+  { name:"Udaipur",      pop:"30.0 L", coverage:63 },
+  { name:"Sikar",        pop:"26.0 L", coverage:49 },
+  { name:"Barmer",       pop:"25.0 L", coverage:31 },
+  { name:"Ajmer",        pop:"25.0 L", coverage:59 },
+  { name:"Bikaner",      pop:"23.0 L", coverage:61 },
+  { name:"Bhilwara",     pop:"24.0 L", coverage:51 },
+  { name:"Kota",         pop:"20.0 L", coverage:72 },
+  { name:"Churu",        pop:"20.0 L", coverage:42 },
+  { name:"Sri Ganganagar",pop:"19.7 L",coverage:78 },
+  { name:"Tonk",         pop:"14.2 L", coverage:58 },
+  { name:"Dungarpur",    pop:"13.0 L", coverage:55 },
+  { name:"Dausa",        pop:"16.1 L", coverage:52 },
+  { name:"Sawai Madhopur",pop:"13.3 L",coverage:46 },
+  { name:"Jaisalmer",    pop:"6.7 L",  coverage:38 },
+  { name:"Banswara",     pop:"17.8 L", coverage:43 },
+  { name:"Jhunjhunu",    pop:"21.1 L", coverage:66 },
+  { name:"Pali",         pop:"20.4 L", coverage:57 },
+  { name:"Rajsamand",    pop:"11.6 L", coverage:61 },
+  { name:"Bundi",        pop:"11.1 L", coverage:53 },
+  { name:"Hanumangarh",  pop:"17.7 L", coverage:73 },
+  { name:"Karauli",      pop:"14.3 L", coverage:39 },
+  { name:"Sirohi",       pop:"10.5 L", coverage:48 },
+  { name:"Jhalawar",     pop:"14.1 L", coverage:62 },
+  { name:"Dholpur",      pop:"12.1 L", coverage:44 },
+  { name:"Baran",        pop:"12.2 L", coverage:56 },
+  { name:"Pratapgarh",   pop:"8.7 L",  coverage:36 },
+  { name:"Jalore",       pop:"18.3 L", coverage:41 },
+  { name:"Bharatpur",    pop:"25.1 L", coverage:69 },
+  { name:"Chittorgarh",  pop:"15.4 L", coverage:64 },
 ];
 
 function DistrictsTab({ agg, onScrapeAll }) {
+  const [distSearch, setDistSearch] = useState("");
+  const [sortBy, setSortBy] = useState("coverage_desc");
+
   if (!agg) return <EmptyState onScrape={onScrapeAll}/>;
 
   const schemes = agg.schemes || [];
@@ -632,6 +644,26 @@ function DistrictsTab({ agg, onScrapeAll }) {
         ))}
       </div>
 
+      {/* Search + Sort controls */}
+      <div style={{ display:"flex", gap:10, marginBottom:16, flexWrap:"wrap" }}>
+        <div style={{ position:"relative", flex:1, minWidth:200 }}>
+          <span style={{ position:"absolute", left:12, top:"50%",
+            transform:"translateY(-50%)", fontSize:14 }}>🔍</span>
+          <input value={distSearch} onChange={e=>setDistSearch(e.target.value)}
+            placeholder="Search district…"
+            style={{ width:"100%", padding:"9px 12px 9px 36px",
+              border:"1px solid #e5e7eb", borderRadius:9, fontSize:13,
+              background:"white", boxSizing:"border-box" }}/>
+        </div>
+        <select value={sortBy} onChange={e=>setSortBy(e.target.value)}
+          style={{ padding:"9px 14px", border:"1px solid #e5e7eb",
+            borderRadius:9, fontSize:13, background:"white", cursor:"pointer" }}>
+          <option value="coverage_desc">Sort: Coverage High→Low</option>
+          <option value="coverage_asc">Sort: Coverage Low→High</option>
+          <option value="name">Sort: A–Z</option>
+        </select>
+      </div>
+
       {/* District table */}
       <div style={{ background:"white", borderRadius:14, border:"1px solid #e5e7eb", overflow:"hidden" }}>
         <div style={{ display:"grid", gridTemplateColumns:"1fr 90px 1fr 1fr",
@@ -640,7 +672,12 @@ function DistrictsTab({ agg, onScrapeAll }) {
             <div key={i} style={{ fontSize:10, fontWeight:700, color:"#9ca3af", letterSpacing:"0.07em" }}>{h}</div>
           ))}
         </div>
-        {JJM_DISTRICTS.map((d, i) => {
+        {[...JJM_DISTRICTS]
+          .filter(d => !distSearch || d.name.toLowerCase().includes(distSearch.toLowerCase()))
+          .sort((a,b) => sortBy==="coverage_desc" ? b.coverage-a.coverage
+                        : sortBy==="coverage_asc"  ? a.coverage-b.coverage
+                        : a.name.localeCompare(b.name))
+          .map((d, i) => {
           const c = d.coverage >= 70 ? "#10b981" : d.coverage >= 50 ? "#f97316" : "#ef4444";
           return (
             <div key={i} style={{ display:"grid", gridTemplateColumns:"1fr 90px 1fr 1fr",
@@ -698,6 +735,7 @@ function AlertsTab({ agg, onScrapeAll }) {
             color: filter===f ? "white" : "#374151",
             border:`1.5px solid ${filter===f ? "#1f2937" : "#e5e7eb"}`,
             borderRadius:20, padding:"7px 18px", fontSize:13, fontWeight:600,
+            cursor:"pointer",
           }}>{f}</button>
         ))}
       </div>
@@ -767,42 +805,75 @@ function AlertsTab({ agg, onScrapeAll }) {
 
 // ── Root App ──────────────────────────────────────────────────────────────────
 export default function App() {
-  const [tab, setTab]           = useState("dashboard");
-  const [agg, setAgg]           = useState(null);
-  const [srcStatus, setStatus]  = useState({});
-  const [scraping, setScraping] = useState({});
-  const [scrapingAll, setAll]   = useState(false);
-  const [online, setOnline]     = useState(null);
-  const [now, setNow]           = useState(new Date());
+  const [tab, setTab]               = useState("dashboard");
+  const [agg, setAgg]               = useState(null);
+  const [srcStatus, setStatus]      = useState({});
+  const [scraping, setScraping]     = useState({});
+  const [scrapingAll, setAll]       = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [online, setOnline]         = useState(null);
+  const [now, setNow]               = useState(new Date());
+  const [scrapeLog, setScrapeLog]   = useState([]);
+
+  const addLog = useCallback((msg, type="info") => {
+    const ts = new Date().toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit",second:"2-digit"});
+    setScrapeLog(prev => [{ts, msg, type}, ...prev].slice(0, 30));
+  }, []);
 
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(t);
   }, []);
 
-  const poll = useCallback(() => {
-    axios.get(`${API}/status`).then(r => setStatus(r.data.sources||{})).catch(() => {});
-    axios.get(`${API}/aggregate`).then(r => setAgg(r.data)).catch(() => {});
-  }, []);
+  const poll = useCallback(async (silent=true) => {
+    if (!silent) setRefreshing(true);
+    try {
+      const [s, a] = await Promise.all([
+        axios.get(`${API}/status`).catch(() => null),
+        axios.get(`${API}/aggregate`).catch(() => null),
+      ]);
+      if (s) setStatus(s.data.sources || {});
+      if (a) setAgg(a.data);
+      if (!silent) addLog("✅ Data refreshed", "success");
+    } catch(e) {
+      if (!silent) addLog("❌ Refresh failed — backend may be sleeping (wait 30s)", "error");
+    }
+    if (!silent) setRefreshing(false);
+  }, [addLog]);
 
   useEffect(() => {
     axios.get(`${API}/`).then(() => setOnline(true)).catch(() => setOnline(false));
-    poll();
-    const id = setInterval(poll, 5000);
+    poll(true);
+    const id = setInterval(() => poll(true), 8000);
     return () => clearInterval(id);
   }, [poll]);
 
   const scrapeOne = useCallback(async sid => {
     setScraping(p => ({...p, [sid]:true}));
-    try { await axios.post(`${API}/scrape/${sid}`); poll(); } catch {}
+    addLog(`⚡ Scraping ${SRC[sid]?.label || sid}…`, "info");
+    try {
+      await axios.post(`${API}/scrape/${sid}`);
+      await poll(true);
+      addLog(`✅ ${SRC[sid]?.label || sid} — done`, "success");
+    } catch(e) {
+      addLog(`❌ ${sid} scrape failed`, "error");
+    }
     setScraping(p => ({...p, [sid]:false}));
-  }, [poll]);
+  }, [poll, addLog]);
 
   const scrapeAll = useCallback(async () => {
     setAll(true);
-    try { await axios.post(`${API}/scrape/all`); poll(); } catch {}
+    addLog("⚡ Scraping all 4 sources…", "info");
+    try {
+      await axios.post(`${API}/scrape/all`);
+      await poll(true);
+      const count = agg?.kpis?.total_schemes || 0;
+      addLog(`✅ Scrape complete — ${count} schemes loaded`, "success");
+    } catch(e) {
+      addLog("❌ Scrape failed — check backend status", "error");
+    }
     setAll(false);
-  }, [poll]);
+  }, [poll, addLog, agg]);
 
   const criticalCount = (agg?.alerts||[]).filter(a => a.severity === "Critical").length;
   const totalSchemes  = agg?.kpis?.total_schemes || 0;
@@ -862,11 +933,14 @@ export default function App() {
 
           <ScrapeNowButton onClick={scrapeAll} loading={scrapingAll} disabled={!online}/>
 
-          <button onClick={poll} style={{ background:"white", color:"#3b82f6",
-            border:"1.5px solid #3b82f6", borderRadius:10,
-            padding:"10px 16px", fontWeight:700, fontSize:13,
-            display:"flex", alignItems:"center", gap:6 }}>
-            🔄 Refresh
+          <button onClick={() => poll(false)} disabled={refreshing} style={{
+            background: refreshing ? "#eff6ff" : "white",
+            color: refreshing ? "#93c5fd" : "#3b82f6",
+            border:`1.5px solid ${refreshing?"#bfdbfe":"#3b82f6"}`,
+            borderRadius:10, padding:"10px 16px", fontWeight:700, fontSize:13,
+            display:"flex", alignItems:"center", gap:6, cursor:refreshing?"not-allowed":"pointer" }}>
+            <span style={{ display:"inline-block", animation:refreshing?"spin 1s linear infinite":"none" }}>🔄</span>
+            {refreshing ? "Refreshing…" : "Refresh"}
           </button>
 
           {/* Backend status */}
@@ -919,6 +993,24 @@ export default function App() {
           )}
         </div>
 
+        {/* Scrape log strip — shows last action */}
+        {scrapeLog.length > 0 && (
+          <div style={{ padding:"4px 28px", background:"#f8fafc",
+            borderTop:"1px solid #f3f4f6", display:"flex", alignItems:"center",
+            gap:10, overflowX:"auto" }}>
+            {scrapeLog.slice(0, 5).map((log, i) => (
+              <div key={i} style={{ display:"flex", alignItems:"center", gap:5,
+                fontSize:11, whiteSpace:"nowrap",
+                color: log.type==="success"?"#166534":log.type==="error"?"#991b1b":"#64748b",
+                opacity: i===0?1:0.5 }}>
+                <span style={{ fontSize:10, color:"#94a3b8" }}>{log.ts}</span>
+                <span>{log.msg}</span>
+                {i < scrapeLog.slice(0,5).length-1 && <span style={{color:"#d1d5db"}}>·</span>}
+              </div>
+            ))}
+          </div>
+        )}
+
         {/* Row 3: nav tabs */}
         <div style={{ display:"flex", padding:"0 28px", borderTop:"1px solid #f1f5f9" }}>
           {TABS.map(t => (
@@ -951,17 +1043,34 @@ export default function App() {
         </div>
       </div>
 
-      {/* Backend offline banner */}
+      {/* Backend status banners */}
+      {online === null && (
+        <div style={{ background:"#f0f9ff", borderBottom:"1px solid #bae6fd",
+          padding:"8px 28px", display:"flex", gap:10, alignItems:"center" }}>
+          <span style={{ animation:"spin 1s linear infinite", display:"inline-block" }}>⚙️</span>
+          <span style={{ fontSize:13, color:"#0369a1", fontWeight:600 }}>
+            Connecting to backend… (Render free tier may take 30–60 seconds to wake up)
+          </span>
+        </div>
+      )}
       {online === false && (
         <div style={{ background:"#fef2f2", borderBottom:"1px solid #fecaca",
-          padding:"10px 28px", display:"flex", gap:10, alignItems:"center" }}>
+          padding:"10px 28px", display:"flex", gap:10, alignItems:"center",
+          flexWrap:"wrap" }}>
           <span>⚠️</span>
-          <span style={{ fontSize:13, color:"#991b1b" }}>
-            <strong>Backend offline.</strong> Run:{" "}
-            <code style={{ background:"#fee2e2", padding:"1px 6px", borderRadius:3 }}>
-              cd backend && uvicorn main:app --reload --port 8000
-            </code>
+          <span style={{ fontSize:13, color:"#991b1b", fontWeight:600 }}>
+            Backend is sleeping (Render free tier).
           </span>
+          <span style={{ fontSize:13, color:"#991b1b" }}>
+            Click <strong>⚡ Scrape Now</strong> — it will wake up automatically in ~30 seconds.
+          </span>
+          <button onClick={() => {
+            setOnline(null);
+            axios.get(`${API}/`).then(() => setOnline(true)).catch(() => setOnline(false));
+          }} style={{ background:"#ef4444", color:"white", border:"none",
+            borderRadius:8, padding:"5px 14px", fontSize:12, fontWeight:700, cursor:"pointer" }}>
+            Retry Connection
+          </button>
         </div>
       )}
 
