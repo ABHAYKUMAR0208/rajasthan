@@ -13,6 +13,7 @@ from scrapers.igod_scraper       import scrape_igod
 from scrapers.rajras_scraper     import scrape_rajras
 from scrapers.jansoochna_scraper import scrape_jansoochna
 from scrapers.myscheme_scraper   import scrape_myscheme
+from scrapers.budget_scraper     import scrape_budget
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s — %(message)s")
 log = logging.getLogger("api")
@@ -27,6 +28,7 @@ SCRAPERS = {
     "jansoochna": scrape_jansoochna,
     "myscheme":   scrape_myscheme,
 }
+BUDGET_CACHE_KEY = "budget"
 
 # ── scrape helpers ─────────────────────────────────────────────────────────────
 def _store(sid, data, status="ok", error=""):
@@ -413,6 +415,36 @@ Rules: only reference actual scheme names from the data. Provide 4-5 coverage_ga
             "generated_at": datetime.utcnow().isoformat() + "Z",
         }
     }
+
+
+@app.get("/budget")
+async def get_budget(refresh: bool = False):
+    """Returns scraped budget + financial data. Cached for 1 hour."""
+    if not refresh and BUDGET_CACHE_KEY in _cache:
+        cached = _cache[BUDGET_CACHE_KEY]
+        # Use cache if less than 1 hour old
+        from datetime import timezone
+        cached_at = cached.get("scraped_at","")
+        if cached_at:
+            try:
+                from datetime import datetime
+                dt = datetime.fromisoformat(cached_at.replace("Z","+00:00"))
+                age_s = (datetime.now(timezone.utc) - dt).total_seconds()
+                if age_s < 3600:
+                    return cached
+            except:
+                pass
+    data = await asyncio.to_thread(scrape_budget)
+    _cache[BUDGET_CACHE_KEY] = data
+    return data
+
+
+@app.post("/scrape/budget")
+async def scrape_budget_endpoint():
+    """Force-refresh budget data."""
+    data = await asyncio.to_thread(scrape_budget)
+    _cache[BUDGET_CACHE_KEY] = data
+    return {"status": "ok", "fields": len(data)}
 
 
 def _latest_scraped(items):
