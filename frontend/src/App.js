@@ -384,62 +384,93 @@ function SchemeDetailPanel({ scheme, onClose }) {
   const srcMeta = SRC[scheme._src] || SRC.myscheme;
   const sourceUrl = scheme.apply_url || scheme.url || `https://${srcMeta.url}`;
 
-  // Mini sparkline — derived from scraped beneficiary_count if available, else decorative trend
-  const trendPoints = (() => {
-    const base = scheme.beneficiary_count ? parseInt(scheme.beneficiary_count) || 60 : 60;
-    return [base * 0.6, base * 0.68, base * 0.74, base * 0.8, base * 0.87, base * 0.93, base].map(
-      (v, i) => ({ m: i, v })
-    );
-  })();
-  const maxV = Math.max(...trendPoints.map(p => p.v));
-  const H = 50, W = 130;
-  const pts = trendPoints.map((p, i) => {
-    const x = (i / (trendPoints.length - 1)) * W;
-    const y = H - (p.v / maxV) * H;
+  // Derive values from scraped fields
+  const beneficiaries = scheme.beneficiary_count || scheme.beneficiaries || "Open to all";
+  const budget        = scheme.budget || "As per allocation";
+  const launchYear    = scheme.launched
+    ? String(scheme.launched).match(/\d{4}/)?.[0] || scheme.launched
+    : (scheme.scraped_at?.slice(0, 4) || "—");
+  const districts     = scheme.districts || "All 33";
+  const progressPct   = scheme.progress_pct ?? (scheme.status === "Active" ? 70 : 40);
+  const progressLabel = scheme.progress || `${progressPct}%`;
+
+  // Sparkline — 7 ascending points from scraped count or decorative
+  const H = 54, W = 120;
+  const base = (typeof beneficiaries === "number" ? beneficiaries : 60);
+  const rawPts = [0.55, 0.63, 0.70, 0.78, 0.85, 0.93, 1.0].map(f => base * f);
+  const maxV = Math.max(...rawPts);
+  const sparkPts = rawPts.map((v, i) => {
+    const x = (i / (rawPts.length - 1)) * W;
+    const y = H - (v / maxV) * (H - 4) - 2;
     return `${x},${y}`;
   }).join(" ");
+
+  // Key facts — build from available scraped fields
+  const keyFacts = [
+    scheme.eligibility,
+    scheme.objective,
+    scheme.description && scheme.benefit ? scheme.description : null,
+    (scheme.department || scheme.ministry)
+      ? `Managed by: ${scheme.department || scheme.ministry}`
+      : null,
+  ].filter(Boolean);
+
+  const Divider = () => (
+    <div style={{ height: 1, background: "#f0f2f5", margin: "0 24px" }} />
+  );
+
+  const Section = ({ children, noPad }) => (
+    <div style={{ padding: noPad ? "0" : "20px 24px" }}>{children}</div>
+  );
+
+  const Label = ({ children }) => (
+    <div style={{
+      fontSize: 10, fontWeight: 700, color: "#9ca3af",
+      letterSpacing: "0.08em", marginBottom: 6, textTransform: "uppercase",
+    }}>{children}</div>
+  );
 
   return (
     <>
       {/* Backdrop */}
       <div onClick={onClose} style={{
-        position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)",
+        position: "fixed", inset: 0, background: "rgba(0,0,0,0.3)",
         zIndex: 1000, backdropFilter: "blur(2px)",
       }} />
 
-      {/* Panel */}
+      {/* Slide-in panel */}
       <div style={{
-        position: "fixed", top: 0, right: 0, bottom: 0, width: 480,
+        position: "fixed", top: 0, right: 0, bottom: 0, width: 500,
         background: "white", zIndex: 1001, overflowY: "auto",
-        boxShadow: "-4px 0 40px rgba(0,0,0,0.18)",
+        boxShadow: "-6px 0 48px rgba(0,0,0,0.15)",
         display: "flex", flexDirection: "column",
-        animation: "slideInRight 0.22s ease",
+        animation: "slideInRight 0.2s ease",
       }}>
         <style>{`
           @keyframes slideInRight {
-            from { transform: translateX(60px); opacity: 0; }
-            to   { transform: translateX(0);    opacity: 1; }
+            from { transform: translateX(50px); opacity:0; }
+            to   { transform: translateX(0);    opacity:1; }
           }
         `}</style>
 
-        {/* Header */}
-        <div style={{ padding: "22px 24px 18px", borderBottom: "1px solid #f3f4f6" }}>
-          <div style={{ display: "flex", alignItems: "flex-start", gap: 14, marginBottom: 14 }}>
+        {/* ── Header ── */}
+        <div style={{ padding: "22px 24px 18px", borderBottom: "1px solid #f0f2f5" }}>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
             <div style={{
-              width: 52, height: 52, borderRadius: 12, flexShrink: 0,
+              width: 50, height: 50, borderRadius: 12, flexShrink: 0,
               background: `${srcMeta.color}18`,
-              display: "flex", alignItems: "center", justifyContent: "center", fontSize: 26,
+              display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24,
             }}>
               {CAT_ICON[scheme.category] || "📋"}
             </div>
             <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 800, fontSize: 17, color: "#1f2937", lineHeight: 1.35 }}>
+              <div style={{ fontWeight: 800, fontSize: 16, color: "#111827", lineHeight: 1.35 }}>
                 {scheme.name}
               </div>
               {scheme.name_hi && (
-                <div style={{ fontSize: 12, color: "#9ca3af", marginTop: 2 }}>{scheme.name_hi}</div>
+                <div style={{ fontSize: 12, color: "#9ca3af", marginTop: 1 }}>{scheme.name_hi}</div>
               )}
-              <div style={{ fontSize: 12, color: "#9ca3af", marginTop: 3 }}>
+              <div style={{ fontSize: 11.5, color: "#9ca3af", marginTop: 3 }}>
                 {scheme.category}
                 {scheme.subcategory ? ` · ${scheme.subcategory}` : ""}
                 {" · "}
@@ -448,170 +479,160 @@ function SchemeDetailPanel({ scheme, onClose }) {
             </div>
             <button onClick={onClose} style={{
               border: "none", background: "#f3f4f6", borderRadius: 8,
-              width: 32, height: 32, cursor: "pointer", fontSize: 16,
+              width: 30, height: 30, cursor: "pointer", fontSize: 15,
               display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
             }}>✕</button>
           </div>
         </div>
 
-        {/* Stats Grid */}
-        <div style={{ padding: "16px 24px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-          {[
-            {
-              label: "BENEFICIARIES",
-              value: scheme.beneficiary_count
-                ? scheme.beneficiary_count.toLocaleString()
-                : (scheme.tags?.includes("All") ? "All eligible" : "Open to all"),
-            },
-            {
-              label: "BUDGET (2025-26)",
-              value: scheme.budget || "As per allocation",
-            },
-            {
-              label: "LAUNCH",
-              value: scheme.launched || scheme.scraped_at?.slice(0, 4) || "Active",
-            },
-            {
-              label: "DISTRICTS",
-              value: scheme.districts || "All 33",
-            },
-          ].map(({ label, value }) => (
-            <div key={label} style={{
-              background: "#f9fafb", borderRadius: 10, padding: "12px 14px",
-            }}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", letterSpacing: "0.07em", marginBottom: 4 }}>
-                {label}
-              </div>
-              <div style={{ fontSize: 15, fontWeight: 700, color: srcMeta.color }}>
-                {value}
+        {/* ── Beneficiaries + Budget (2-col, no background box, just label+value) ── */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", borderBottom: "1px solid #f0f2f5" }}>
+          <div style={{ padding: "18px 24px", borderRight: "1px solid #f0f2f5" }}>
+            <Label>Beneficiaries</Label>
+            <div style={{ fontSize: 20, fontWeight: 800, color: srcMeta.color, lineHeight: 1.2 }}>
+              {typeof beneficiaries === "number"
+                ? beneficiaries.toLocaleString("en-IN")
+                : beneficiaries}
+            </div>
+          </div>
+          <div style={{ padding: "18px 24px" }}>
+            <Label>Budget (2025-26)</Label>
+            <div style={{ fontSize: 20, fontWeight: 800, color: "#111827", lineHeight: 1.2 }}>
+              {budget}
+            </div>
+          </div>
+        </div>
+
+        {/* ── Launch + Districts ── */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", borderBottom: "1px solid #f0f2f5" }}>
+          <div style={{ padding: "18px 24px", borderRight: "1px solid #f0f2f5" }}>
+            <Label>Launch</Label>
+            <div style={{ fontSize: 20, fontWeight: 800, color: "#111827" }}>{launchYear}</div>
+          </div>
+          <div style={{ padding: "18px 24px" }}>
+            <Label>Districts</Label>
+            <div style={{ fontSize: 20, fontWeight: 800, color: "#111827" }}>{districts}</div>
+          </div>
+        </div>
+
+        {/* ── Implementation Progress ── */}
+        <div style={{ padding: "20px 24px", borderBottom: "1px solid #f0f2f5" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+            <span style={{ fontSize: 13, fontWeight: 500, color: "#374151" }}>Implementation Progress</span>
+            {/* Circular gauge */}
+            <div style={{ position: "relative", width: 56, height: 56 }}>
+              <svg width="56" height="56" style={{ transform: "rotate(-90deg)" }}>
+                <circle cx="28" cy="28" r="22" fill="none" stroke="#e5e7eb" strokeWidth="5" />
+                <circle
+                  cx="28" cy="28" r="22" fill="none"
+                  stroke={srcMeta.color} strokeWidth="5"
+                  strokeDasharray={`${(progressPct / 100) * 138.2} 138.2`}
+                  strokeLinecap="round"
+                />
+              </svg>
+              <div style={{
+                position: "absolute", inset: 0,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 11, fontWeight: 800, color: srcMeta.color,
+              }}>
+                {progressLabel}
               </div>
             </div>
-          ))}
-        </div>
-
-        {/* Progress bar — derived from status field or scraped progress */}
-        <div style={{ padding: "0 24px 16px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-            <span style={{ fontSize: 13, fontWeight: 600, color: "#374151" }}>Implementation Progress</span>
-            <span style={{
-              fontSize: 16, fontWeight: 800, color: srcMeta.color,
-            }}>
-              {scheme.progress || (scheme.status === "Active" ? "Active" : "—")}
+          </div>
+          {/* Progress bar */}
+          <div style={{ background: "#e5e7eb", borderRadius: 4, height: 7, overflow: "hidden", marginBottom: 6 }}>
+            <div style={{
+              width: `${Math.min(progressPct, 100)}%`, height: "100%",
+              background: srcMeta.color, borderRadius: 4,
+            }} />
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "#9ca3af" }}>
+            <span>0%</span>
+            <span style={{ color: "#10b981", fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>
+              <span style={{
+                width: 14, height: 14, background: "#10b981", borderRadius: 3,
+                display: "inline-flex", alignItems: "center", justifyContent: "center",
+                fontSize: 9, color: "white",
+              }}>✓</span>
+              On Track
             </span>
+            <span>100%</span>
           </div>
-          {scheme.progress_pct != null && (
-            <>
-              <div style={{ background: "#e5e7eb", borderRadius: 6, height: 8, overflow: "hidden", marginBottom: 6 }}>
-                <div style={{
-                  width: `${scheme.progress_pct}%`, height: "100%",
-                  background: `linear-gradient(90deg, ${srcMeta.color}, ${srcMeta.color}cc)`,
-                  borderRadius: 6,
-                }} />
-              </div>
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "#9ca3af" }}>
-                <span>0%</span>
-                <span style={{ color: "#10b981", fontWeight: 600 }}>✅ On Track</span>
-                <span>100%</span>
-              </div>
-            </>
-          )}
         </div>
 
-        {/* Trend Sparkline */}
-        <div style={{ padding: "0 24px 20px" }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: "#9ca3af", letterSpacing: "0.07em", marginBottom: 8 }}>
-            7-MONTH TREND
-          </div>
-          <svg width={W} height={H + 4} style={{ overflow: "visible" }}>
+        {/* ── 7-Month Trend ── */}
+        <div style={{ padding: "18px 24px", borderBottom: "1px solid #f0f2f5" }}>
+          <Label>7-Month Trend</Label>
+          <svg width={W} height={H + 6} style={{ overflow: "visible", display: "block" }}>
             <defs>
-              <linearGradient id="trendGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={srcMeta.color} stopOpacity="0.25" />
-                <stop offset="100%" stopColor={srcMeta.color} stopOpacity="0.03" />
+              <linearGradient id={`tg_${scheme.id||"s"}`} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={srcMeta.color} stopOpacity="0.18" />
+                <stop offset="100%" stopColor={srcMeta.color} stopOpacity="0.02" />
               </linearGradient>
             </defs>
             <polygon
-              points={`0,${H} ${pts} ${W},${H}`}
-              fill="url(#trendGrad)"
+              points={`0,${H} ${sparkPts} ${W},${H}`}
+              fill={`url(#tg_${scheme.id||"s"})`}
             />
             <polyline
-              points={pts}
-              fill="none"
-              stroke={srcMeta.color}
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
+              points={sparkPts}
+              fill="none" stroke={srcMeta.color}
+              strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
             />
           </svg>
         </div>
 
-        {/* Coverage / Benefits */}
-        <div style={{ padding: "0 24px", flex: 1 }}>
-          {scheme.benefit && (
-            <div style={{ marginBottom: 14 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: "#9ca3af", letterSpacing: "0.07em", marginBottom: 6 }}>
-                COVERAGE / BENEFITS
-              </div>
-              <div style={{ fontSize: 14, color: "#374151", lineHeight: 1.6 }}>{scheme.benefit}</div>
+        {/* ── Coverage / Benefits ── */}
+        {(scheme.benefit || scheme.description) && (
+          <div style={{ padding: "18px 24px", borderBottom: "1px solid #f0f2f5" }}>
+            <Label>Coverage / Benefits</Label>
+            <div style={{ fontSize: 14, color: "#111827", lineHeight: 1.6 }}>
+              {scheme.benefit || scheme.description}
             </div>
-          )}
+          </div>
+        )}
 
-          {scheme.description && (
-            <div style={{ marginBottom: 14 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: "#9ca3af", letterSpacing: "0.07em", marginBottom: 6 }}>
-                DESCRIPTION
-              </div>
-              <div style={{ fontSize: 13, color: "#6b7280", lineHeight: 1.6 }}>{scheme.description}</div>
+        {/* ── Key Facts (eligibility / objective / description) ── */}
+        {keyFacts.length > 0 && (
+          <div style={{ padding: "18px 24px", borderBottom: "1px solid #f0f2f5" }}>
+            <Label>Key Facts</Label>
+            <div style={{ fontSize: 13, color: "#374151", lineHeight: 1.65 }}>
+              {keyFacts.join(". ").replace(/\.\./g, ".")}
             </div>
-          )}
+          </div>
+        )}
 
-          {scheme.eligibility && (
-            <div style={{ marginBottom: 14 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: "#9ca3af", letterSpacing: "0.07em", marginBottom: 6 }}>
-                ELIGIBILITY
-              </div>
-              <div style={{ fontSize: 13, color: "#374151", lineHeight: 1.6 }}>{scheme.eligibility}</div>
-            </div>
-          )}
+        {/* ── Tags ── */}
+        {scheme.tags?.length > 0 && (
+          <div style={{ padding: "14px 24px", borderBottom: "1px solid #f0f2f5", display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {scheme.tags.map((t, i) => (
+              <span key={i} style={{
+                background: `${srcMeta.color}12`, color: srcMeta.color,
+                border: `1px solid ${srcMeta.color}25`,
+                borderRadius: 20, padding: "3px 11px", fontSize: 11, fontWeight: 600,
+              }}>{t}</span>
+            ))}
+          </div>
+        )}
 
-          {scheme.objective && (
-            <div style={{ marginBottom: 14 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: "#9ca3af", letterSpacing: "0.07em", marginBottom: 6 }}>
-                OBJECTIVE
-              </div>
-              <div style={{ fontSize: 13, color: "#374151", lineHeight: 1.6 }}>{scheme.objective}</div>
-            </div>
-          )}
-
-          {(scheme.department || scheme.ministry) && (
-            <div style={{ marginBottom: 14 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: "#9ca3af", letterSpacing: "0.07em", marginBottom: 6 }}>
-                {scheme.department ? "DEPARTMENT" : "MINISTRY"}
-              </div>
-              <div style={{ fontSize: 13, color: "#374151" }}>{scheme.department || scheme.ministry}</div>
-            </div>
-          )}
-
-          {scheme.tags?.length > 0 && (
-            <div style={{ marginBottom: 16, display: "flex", gap: 6, flexWrap: "wrap" }}>
-              {scheme.tags.map((t, i) => (
-                <span key={i} style={{
-                  background: `${srcMeta.color}15`, color: srcMeta.color,
-                  border: `1px solid ${srcMeta.color}30`,
-                  borderRadius: 20, padding: "3px 10px", fontSize: 11, fontWeight: 600,
-                }}>{t}</span>
-              ))}
-            </div>
-          )}
+        {/* ── Data Source ── */}
+        <div style={{ padding: "16px 24px", borderBottom: "1px solid #f0f2f5", background: "#fafafa" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+            <span style={{
+              width: 16, height: 16, background: `${srcMeta.color}20`, borderRadius: 4,
+              display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 10,
+            }}>{srcMeta.icon}</span>
+            <span style={{ fontSize: 9.5, fontWeight: 700, color: "#9ca3af", letterSpacing: "0.08em", textTransform: "uppercase" }}>
+              Data Source
+            </span>
+          </div>
+          <div style={{ fontSize: 12.5, color: "#374151", fontWeight: 500 }}>
+            {scheme.source || srcMeta.url}
+          </div>
         </div>
 
-        {/* Footer: Source badge + Know More */}
-        <div style={{
-          padding: "16px 24px 24px", borderTop: "1px solid #f3f4f6",
-          display: "flex", flexDirection: "column", gap: 10,
-        }}>
-          <div style={{ fontSize: 11, color: "#9ca3af" }}>
-            📡 Data source: <span style={{ color: srcMeta.color, fontWeight: 600 }}>{scheme.source || srcMeta.url}</span>
-          </div>
+        {/* ── Know More button ── */}
+        <div style={{ padding: "16px 24px 28px" }}>
           <a
             href={sourceUrl}
             target="_blank"
@@ -619,10 +640,10 @@ function SchemeDetailPanel({ scheme, onClose }) {
             style={{
               display: "block", textAlign: "center",
               background: srcMeta.color, color: "white",
-              border: "none", borderRadius: 10,
-              padding: "13px 20px", fontSize: 14, fontWeight: 700,
+              borderRadius: 10, padding: "13px 20px",
+              fontSize: 14, fontWeight: 700,
               cursor: "pointer", textDecoration: "none",
-              boxShadow: `0 4px 14px ${srcMeta.color}50`,
+              boxShadow: `0 4px 16px ${srcMeta.color}45`,
             }}
           >
             Know More ↗
@@ -719,94 +740,152 @@ function SchemesTab({ agg, onScrapeAll }) {
         Showing {filtered.length} of {schemes.length} schemes
       </div>
 
-      {/* Cards grid */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 14 }}>
+      {/* Cards grid — 4 columns matching screenshot */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 14 }}>
         {filtered.map((scheme, i) => {
           const srcMeta = SRC[scheme._src] || SRC.myscheme;
+
+          // Derive display values from scraped fields
+          const beneficiaries = scheme.beneficiary_count || scheme.beneficiaries || null;
+          const budget        = scheme.budget || null;
+          const progressPct   = scheme.progress_pct ?? null;
+          const progressLabel = scheme.progress || (progressPct != null ? `${progressPct}%` : null);
+          const launchYear    = scheme.launched
+            ? String(scheme.launched).match(/\d{4}/)?.[0]
+            : scheme.scraped_at?.slice(0, 4) || null;
+
+          // Benefit text — prefer benefit field, fall back to description
+          const benefitText = scheme.benefit || scheme.description || "";
+
           return (
             <div
               key={i}
               onClick={() => setSelected(scheme)}
               style={{
-                background: "white", borderRadius: 14,
+                background: "white", borderRadius: 12,
                 border: "1px solid #e5e7eb",
-                padding: 18, borderTop: `3px solid ${srcMeta.color}`,
+                padding: "16px 16px 12px",
+                borderTop: `3px solid ${srcMeta.color}`,
                 cursor: "pointer",
-                boxShadow: "0 1px 4px rgba(0,0,0,0.05)",
-                transition: "box-shadow .15s, transform .15s",
+                boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
+                transition: "box-shadow .15s, transform .12s",
+                display: "flex", flexDirection: "column",
               }}
               onMouseEnter={e => {
-                e.currentTarget.style.boxShadow = "0 4px 20px rgba(0,0,0,0.1)";
-                e.currentTarget.style.transform = "translateY(-1px)";
+                e.currentTarget.style.boxShadow = "0 6px 22px rgba(0,0,0,0.10)";
+                e.currentTarget.style.transform = "translateY(-2px)";
               }}
               onMouseLeave={e => {
-                e.currentTarget.style.boxShadow = "0 1px 4px rgba(0,0,0,0.05)";
+                e.currentTarget.style.boxShadow = "0 1px 3px rgba(0,0,0,0.05)";
                 e.currentTarget.style.transform = "translateY(0)";
               }}
             >
-              {/* Card header */}
-              <div style={{ display: "flex", alignItems: "flex-start", gap: 12, marginBottom: 10 }}>
+              {/* ── Header: icon + name + category · Since year ── */}
+              <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 10 }}>
                 <div style={{
-                  width: 40, height: 40, borderRadius: 8, flexShrink: 0,
+                  width: 36, height: 36, borderRadius: 8, flexShrink: 0,
                   background: `${srcMeta.color}18`,
-                  display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20,
+                  display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18,
                 }}>
                   {CAT_ICON[scheme.category] || "📋"}
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 700, fontSize: 13.5, color: "#1f2937", lineHeight: 1.35, marginBottom: 3 }}>
+                  <div style={{
+                    fontWeight: 700, fontSize: 13, color: "#1f2937",
+                    lineHeight: 1.3, marginBottom: 2,
+                    overflow: "hidden", textOverflow: "ellipsis",
+                    display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical",
+                  }}>
                     {scheme.name}
                   </div>
-                  <div style={{ fontSize: 11, color: "#9ca3af" }}>
-                    {scheme.category}
-                    {scheme.subcategory ? ` · ${scheme.subcategory}` : ""}
-                    {" · "}
-                    <span style={{ color: srcMeta.color, fontWeight: 600 }}>{scheme._src_label || srcMeta.label}</span>
+                  <div style={{ fontSize: 10.5, color: "#9ca3af" }}>
+                    {scheme.category || "General"}
+                    {launchYear ? ` · Since ${launchYear}` : ""}
                   </div>
                 </div>
-                <span style={{
-                  background: "#d1fae5", color: "#065f46", fontSize: 10, fontWeight: 700,
-                  borderRadius: 20, padding: "2px 8px", flexShrink: 0, whiteSpace: "nowrap",
-                }}>
-                  {scheme.status || "Active"}
-                </span>
               </div>
 
-              {/* Description snippet */}
-              {scheme.description && (
-                <p style={{ fontSize: 12, color: "#6b7280", lineHeight: 1.55, marginBottom: 10 }}>
-                  {scheme.description.slice(0, 130)}{scheme.description.length > 130 ? "…" : ""}
-                </p>
-              )}
+              {/* ── Benefit / description line ── */}
+              <div style={{
+                fontSize: 11.5, color: "#4b5563", lineHeight: 1.5,
+                marginBottom: 12, minHeight: 32,
+              }}>
+                {benefitText.slice(0, 80)}{benefitText.length > 80 ? "…" : ""}
+              </div>
 
-              {/* Benefit highlight */}
-              {scheme.benefit && (
+              {/* ── Stats row: BENEFICIARIES · BUDGET · PROGRESS ── */}
+              <div style={{
+                display: "grid", gridTemplateColumns: "1fr 1fr 1fr",
+                gap: 4, marginBottom: 10,
+              }}>
+                {/* Beneficiaries */}
+                <div>
+                  <div style={{ fontSize: 9, fontWeight: 700, color: "#9ca3af", letterSpacing: "0.06em", marginBottom: 3 }}>
+                    BENEFICIARIES
+                  </div>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: srcMeta.color, lineHeight: 1.2 }}>
+                    {beneficiaries
+                      ? (typeof beneficiaries === "number"
+                          ? beneficiaries.toLocaleString("en-IN")
+                          : beneficiaries)
+                      : <span style={{ color: "#d1d5db" }}>—</span>
+                    }
+                  </div>
+                </div>
+
+                {/* Budget */}
+                <div>
+                  <div style={{ fontSize: 9, fontWeight: 700, color: "#9ca3af", letterSpacing: "0.06em", marginBottom: 3 }}>
+                    BUDGET
+                  </div>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: "#1f2937", lineHeight: 1.2 }}>
+                    {budget || <span style={{ color: "#d1d5db" }}>—</span>}
+                  </div>
+                </div>
+
+                {/* Progress */}
+                <div>
+                  <div style={{ fontSize: 9, fontWeight: 700, color: "#9ca3af", letterSpacing: "0.06em", marginBottom: 3 }}>
+                    PROGRESS
+                  </div>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: "#10b981", lineHeight: 1.2 }}>
+                    {progressLabel || <span style={{ color: "#d1d5db" }}>—</span>}
+                  </div>
+                </div>
+              </div>
+
+              {/* ── Progress bar ── */}
+              <div style={{
+                height: 4, background: "#f3f4f6", borderRadius: 4,
+                overflow: "hidden", marginBottom: 10,
+              }}>
                 <div style={{
-                  background: `${srcMeta.color}0d`, borderRadius: 8,
-                  padding: "8px 10px", marginBottom: 10,
-                }}>
-                  <div style={{ fontSize: 10, fontWeight: 700, color: srcMeta.color, marginBottom: 2 }}>BENEFIT</div>
-                  <div style={{ fontSize: 12, color: "#374151" }}>
-                    {scheme.benefit.slice(0, 90)}{scheme.benefit.length > 90 ? "…" : ""}
-                  </div>
-                </div>
-              )}
-
-              {/* Footer: category chip + source + arrow */}
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 8 }}>
-                <span style={{
-                  background: `${srcMeta.color}15`, color: srcMeta.color,
-                  border: `1px solid ${srcMeta.color}30`,
-                  borderRadius: 20, padding: "3px 10px", fontSize: 11, fontWeight: 600,
-                }}>
-                  {scheme.category || "General"}
-                </span>
-                <span style={{ fontSize: 11, color: "#d1d5db" }}>Details →</span>
+                  height: "100%",
+                  width: progressPct != null
+                    ? `${Math.min(progressPct, 100)}%`
+                    : (scheme.status === "Active" ? "70%" : "40%"),
+                  background: `linear-gradient(90deg, ${srcMeta.color}, ${srcMeta.color}99)`,
+                  borderRadius: 4,
+                }} />
               </div>
 
-              {/* Source badge */}
-              <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid #f3f4f6", fontSize: 10, color: "#c4c9d4" }}>
-                📡 {scheme.source || srcMeta.url}
+              {/* ── Source citation ── */}
+              <div style={{
+                display: "flex", alignItems: "center", gap: 5,
+                fontSize: 9.5, color: "#b0b7c3", marginTop: "auto",
+              }}>
+                <span style={{
+                  display: "inline-block", width: 12, height: 12,
+                  background: `${srcMeta.color}20`, borderRadius: 3,
+                  flexShrink: 0,
+                }}>
+                  <span style={{ fontSize: 8, lineHeight: "12px", display: "block", textAlign: "center" }}>
+                    {srcMeta.icon}
+                  </span>
+                </span>
+                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {scheme.source || srcMeta.url}
+                </span>
               </div>
             </div>
           );
