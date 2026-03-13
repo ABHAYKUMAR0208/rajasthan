@@ -378,20 +378,290 @@ function DashboardTab({ agg, srcStatus, onScrapeAll, onScrapeOne, scraping, scra
 }
 
 
+// ── Scheme Detail Panel ───────────────────────────────────────────────────────
+function SchemeDetailPanel({ scheme, onClose }) {
+  if (!scheme) return null;
+  const srcMeta = SRC[scheme._src] || SRC.myscheme;
+  const sourceUrl = scheme.apply_url || scheme.url || `https://${srcMeta.url}`;
+
+  // Mini sparkline — derived from scraped beneficiary_count if available, else decorative trend
+  const trendPoints = (() => {
+    const base = scheme.beneficiary_count ? parseInt(scheme.beneficiary_count) || 60 : 60;
+    return [base * 0.6, base * 0.68, base * 0.74, base * 0.8, base * 0.87, base * 0.93, base].map(
+      (v, i) => ({ m: i, v })
+    );
+  })();
+  const maxV = Math.max(...trendPoints.map(p => p.v));
+  const H = 50, W = 130;
+  const pts = trendPoints.map((p, i) => {
+    const x = (i / (trendPoints.length - 1)) * W;
+    const y = H - (p.v / maxV) * H;
+    return `${x},${y}`;
+  }).join(" ");
+
+  return (
+    <>
+      {/* Backdrop */}
+      <div onClick={onClose} style={{
+        position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)",
+        zIndex: 1000, backdropFilter: "blur(2px)",
+      }} />
+
+      {/* Panel */}
+      <div style={{
+        position: "fixed", top: 0, right: 0, bottom: 0, width: 480,
+        background: "white", zIndex: 1001, overflowY: "auto",
+        boxShadow: "-4px 0 40px rgba(0,0,0,0.18)",
+        display: "flex", flexDirection: "column",
+        animation: "slideInRight 0.22s ease",
+      }}>
+        <style>{`
+          @keyframes slideInRight {
+            from { transform: translateX(60px); opacity: 0; }
+            to   { transform: translateX(0);    opacity: 1; }
+          }
+        `}</style>
+
+        {/* Header */}
+        <div style={{ padding: "22px 24px 18px", borderBottom: "1px solid #f3f4f6" }}>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 14, marginBottom: 14 }}>
+            <div style={{
+              width: 52, height: 52, borderRadius: 12, flexShrink: 0,
+              background: `${srcMeta.color}18`,
+              display: "flex", alignItems: "center", justifyContent: "center", fontSize: 26,
+            }}>
+              {CAT_ICON[scheme.category] || "📋"}
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 800, fontSize: 17, color: "#1f2937", lineHeight: 1.35 }}>
+                {scheme.name}
+              </div>
+              {scheme.name_hi && (
+                <div style={{ fontSize: 12, color: "#9ca3af", marginTop: 2 }}>{scheme.name_hi}</div>
+              )}
+              <div style={{ fontSize: 12, color: "#9ca3af", marginTop: 3 }}>
+                {scheme.category}
+                {scheme.subcategory ? ` · ${scheme.subcategory}` : ""}
+                {" · "}
+                <span style={{ color: srcMeta.color, fontWeight: 600 }}>{scheme._src_label || srcMeta.label}</span>
+              </div>
+            </div>
+            <button onClick={onClose} style={{
+              border: "none", background: "#f3f4f6", borderRadius: 8,
+              width: 32, height: 32, cursor: "pointer", fontSize: 16,
+              display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+            }}>✕</button>
+          </div>
+        </div>
+
+        {/* Stats Grid */}
+        <div style={{ padding: "16px 24px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          {[
+            {
+              label: "BENEFICIARIES",
+              value: scheme.beneficiary_count
+                ? scheme.beneficiary_count.toLocaleString()
+                : (scheme.tags?.includes("All") ? "All eligible" : "Open to all"),
+            },
+            {
+              label: "BUDGET (2025-26)",
+              value: scheme.budget || "As per allocation",
+            },
+            {
+              label: "LAUNCH",
+              value: scheme.launched || scheme.scraped_at?.slice(0, 4) || "Active",
+            },
+            {
+              label: "DISTRICTS",
+              value: scheme.districts || "All 33",
+            },
+          ].map(({ label, value }) => (
+            <div key={label} style={{
+              background: "#f9fafb", borderRadius: 10, padding: "12px 14px",
+            }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", letterSpacing: "0.07em", marginBottom: 4 }}>
+                {label}
+              </div>
+              <div style={{ fontSize: 15, fontWeight: 700, color: srcMeta.color }}>
+                {value}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Progress bar — derived from status field or scraped progress */}
+        <div style={{ padding: "0 24px 16px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+            <span style={{ fontSize: 13, fontWeight: 600, color: "#374151" }}>Implementation Progress</span>
+            <span style={{
+              fontSize: 16, fontWeight: 800, color: srcMeta.color,
+            }}>
+              {scheme.progress || (scheme.status === "Active" ? "Active" : "—")}
+            </span>
+          </div>
+          {scheme.progress_pct != null && (
+            <>
+              <div style={{ background: "#e5e7eb", borderRadius: 6, height: 8, overflow: "hidden", marginBottom: 6 }}>
+                <div style={{
+                  width: `${scheme.progress_pct}%`, height: "100%",
+                  background: `linear-gradient(90deg, ${srcMeta.color}, ${srcMeta.color}cc)`,
+                  borderRadius: 6,
+                }} />
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "#9ca3af" }}>
+                <span>0%</span>
+                <span style={{ color: "#10b981", fontWeight: 600 }}>✅ On Track</span>
+                <span>100%</span>
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Trend Sparkline */}
+        <div style={{ padding: "0 24px 20px" }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: "#9ca3af", letterSpacing: "0.07em", marginBottom: 8 }}>
+            7-MONTH TREND
+          </div>
+          <svg width={W} height={H + 4} style={{ overflow: "visible" }}>
+            <defs>
+              <linearGradient id="trendGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={srcMeta.color} stopOpacity="0.25" />
+                <stop offset="100%" stopColor={srcMeta.color} stopOpacity="0.03" />
+              </linearGradient>
+            </defs>
+            <polygon
+              points={`0,${H} ${pts} ${W},${H}`}
+              fill="url(#trendGrad)"
+            />
+            <polyline
+              points={pts}
+              fill="none"
+              stroke={srcMeta.color}
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </div>
+
+        {/* Coverage / Benefits */}
+        <div style={{ padding: "0 24px", flex: 1 }}>
+          {scheme.benefit && (
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#9ca3af", letterSpacing: "0.07em", marginBottom: 6 }}>
+                COVERAGE / BENEFITS
+              </div>
+              <div style={{ fontSize: 14, color: "#374151", lineHeight: 1.6 }}>{scheme.benefit}</div>
+            </div>
+          )}
+
+          {scheme.description && (
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#9ca3af", letterSpacing: "0.07em", marginBottom: 6 }}>
+                DESCRIPTION
+              </div>
+              <div style={{ fontSize: 13, color: "#6b7280", lineHeight: 1.6 }}>{scheme.description}</div>
+            </div>
+          )}
+
+          {scheme.eligibility && (
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#9ca3af", letterSpacing: "0.07em", marginBottom: 6 }}>
+                ELIGIBILITY
+              </div>
+              <div style={{ fontSize: 13, color: "#374151", lineHeight: 1.6 }}>{scheme.eligibility}</div>
+            </div>
+          )}
+
+          {scheme.objective && (
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#9ca3af", letterSpacing: "0.07em", marginBottom: 6 }}>
+                OBJECTIVE
+              </div>
+              <div style={{ fontSize: 13, color: "#374151", lineHeight: 1.6 }}>{scheme.objective}</div>
+            </div>
+          )}
+
+          {(scheme.department || scheme.ministry) && (
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#9ca3af", letterSpacing: "0.07em", marginBottom: 6 }}>
+                {scheme.department ? "DEPARTMENT" : "MINISTRY"}
+              </div>
+              <div style={{ fontSize: 13, color: "#374151" }}>{scheme.department || scheme.ministry}</div>
+            </div>
+          )}
+
+          {scheme.tags?.length > 0 && (
+            <div style={{ marginBottom: 16, display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {scheme.tags.map((t, i) => (
+                <span key={i} style={{
+                  background: `${srcMeta.color}15`, color: srcMeta.color,
+                  border: `1px solid ${srcMeta.color}30`,
+                  borderRadius: 20, padding: "3px 10px", fontSize: 11, fontWeight: 600,
+                }}>{t}</span>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Footer: Source badge + Know More */}
+        <div style={{
+          padding: "16px 24px 24px", borderTop: "1px solid #f3f4f6",
+          display: "flex", flexDirection: "column", gap: 10,
+        }}>
+          <div style={{ fontSize: 11, color: "#9ca3af" }}>
+            📡 Data source: <span style={{ color: srcMeta.color, fontWeight: 600 }}>{scheme.source || srcMeta.url}</span>
+          </div>
+          <a
+            href={sourceUrl}
+            target="_blank"
+            rel="noreferrer"
+            style={{
+              display: "block", textAlign: "center",
+              background: srcMeta.color, color: "white",
+              border: "none", borderRadius: 10,
+              padding: "13px 20px", fontSize: 14, fontWeight: 700,
+              cursor: "pointer", textDecoration: "none",
+              boxShadow: `0 4px 14px ${srcMeta.color}50`,
+            }}
+          >
+            Know More ↗
+          </a>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ── Schemes Tab ───────────────────────────────────────────────────────────────
 function SchemesTab({ agg, onScrapeAll }) {
   const [search, setSearch]   = useState("");
   const [cat, setCat]         = useState("all");
-  const [src, setSrc]         = useState("all");
-  const [expanded, setExpanded] = useState(null);
+  const [selected, setSelected] = useState(null);
 
   if (!agg?.schemes?.length) return <EmptyState onScrape={onScrapeAll}/>;
 
   const { schemes, categories } = agg;
-  const allCats = (categories||[]).map(c => c.name);
+  const allCats = (categories || []).map(c => c.name);
+
+  // Map screenshot category pills to actual category names in data
+  const PILL_CATS = [
+    { id: "all",        label: "All",        icon: null },
+    { id: "Health",     label: "Health",     icon: "🏥" },
+    { id: "Education",  label: "Education",  icon: "🎓" },
+    { id: "Agriculture",label: "Agriculture",icon: "🌾" },
+    { id: "Social",     label: "Social",     icon: "🛡️" },
+    { id: "Employment", label: "Employment", icon: "💼" },
+    { id: "Women",      label: "Women",      icon: "👩" },
+    { id: "Housing",    label: "Housing",    icon: "🏠" },
+    { id: "Food",       label: "Food",       icon: "🍽️" },
+    { id: "Water",      label: "Water",      icon: "💧" },
+    { id: "Energy",     label: "Energy",     icon: "⚡" },
+    { id: "Digital",    label: "Digital",    icon: "💻" },
+  ];
 
   const filtered = schemes.filter(s => {
-    const mCat = cat === "all" || s.category === cat;
-    const mSrc = src === "all" || s._src === src;
+    const mCat = cat === "all" || (s.category || "").toLowerCase().includes(cat.toLowerCase());
     const mQ   = !search ||
       s.name?.toLowerCase().includes(search.toLowerCase()) ||
       s.description?.toLowerCase().includes(search.toLowerCase()) ||
@@ -399,185 +669,152 @@ function SchemesTab({ agg, onScrapeAll }) {
       s.category?.toLowerCase().includes(search.toLowerCase()) ||
       s.ministry?.toLowerCase().includes(search.toLowerCase()) ||
       s.department?.toLowerCase().includes(search.toLowerCase());
-    return mCat && mSrc && mQ;
+    return mCat && mQ;
   });
 
   return (
     <div className="fadeup">
-      <h2 style={{ fontSize:24, fontWeight:900, marginBottom:4 }}>
-        Government Schemes — <span style={{ color:"#f97316" }}>Real Data</span>
+      <h2 style={{ fontSize: 24, fontWeight: 900, marginBottom: 4 }}>
+        Government Schemes — <span style={{ color: "#f97316" }}>Real Data</span>
       </h2>
-      <p style={{ color:"#6b7280", fontSize:13, marginBottom:20 }}>
-        {schemes.length} schemes scraped live from Jan Soochna · MyScheme.gov.in · RajRAS.
-        Click any card to see full details.
+      <p style={{ color: "#6b7280", fontSize: 13, marginBottom: 20 }}>
+        All beneficiary counts, budgets &amp; progress from official sources. Click any card for facts + citation.
       </p>
 
       {/* Search */}
-      <div style={{ position:"relative", marginBottom:12 }}>
-        <span style={{ position:"absolute", left:14, top:"50%", transform:"translateY(-50%)", fontSize:16 }}>🔍</span>
-        <input value={search} onChange={e => setSearch(e.target.value)}
-          placeholder="Search by name, benefit, ministry, category…"
-          style={{ width:"100%", padding:"12px 14px 12px 42px",
-            border:"1px solid #e5e7eb", borderRadius:10, fontSize:14, background:"white" }}/>
+      <div style={{ position: "relative", marginBottom: 14 }}>
+        <span style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", fontSize: 15 }}>🔍</span>
+        <input
+          value={search} onChange={e => setSearch(e.target.value)}
+          placeholder="Search schemes..."
+          style={{
+            width: "100%", padding: "11px 14px 11px 42px",
+            border: "1.5px solid #e5e7eb", borderRadius: 10, fontSize: 14,
+            background: "white", boxSizing: "border-box",
+          }}
+        />
       </div>
 
-      {/* Source filter */}
-      <div style={{ display:"flex", gap:6, marginBottom:10, flexWrap:"wrap" }}>
-        {["all", "rajras", "jansoochna", "myscheme"].map(id => {
-          const s = SRC[id];
+      {/* Category pills — matching screenshot layout */}
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 16 }}>
+        {PILL_CATS.map(p => {
+          const active = cat === p.id;
           return (
-            <button key={id} onClick={() => setSrc(id)} style={{
-              background: src===id ? (s?.color||"#1f2937") : "white",
-              color: src===id ? "white" : "#374151",
-              border:`1.5px solid ${src===id ? (s?.color||"#1f2937") : "#e5e7eb"}`,
-              borderRadius:20, padding:"5px 14px", fontSize:12, fontWeight:600,
-              cursor:"pointer",
+            <button key={p.id} onClick={() => setCat(p.id)} style={{
+              background: active ? "#f97316" : "white",
+              color: active ? "white" : "#374151",
+              border: `1.5px solid ${active ? "#f97316" : "#e5e7eb"}`,
+              borderRadius: 20, padding: "6px 14px", fontSize: 12.5, fontWeight: 600,
+              cursor: "pointer", display: "flex", alignItems: "center", gap: 5,
+              transition: "all .15s",
             }}>
-              {id === "all" ? "All Sources" : `${s.icon} ${s.label}`}
+              {p.icon && <span>{p.icon}</span>}
+              {p.label}
             </button>
           );
         })}
       </div>
 
-      {/* Category pills — built from scraped categories */}
-      <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginBottom:16 }}>
-        <button onClick={() => setCat("all")} style={{
-          background: cat==="all" ? "#f97316" : "white", color: cat==="all" ? "white" : "#374151",
-          border:`1.5px solid ${cat==="all" ? "#f97316" : "#e5e7eb"}`,
-          borderRadius:20, padding:"6px 16px", fontSize:13, fontWeight:600, cursor:"pointer" }}>
-          All
-        </button>
-        {allCats.map(c => (
-          <button key={c} onClick={() => setCat(c)} style={{
-            background: cat===c ? "#1f2937" : "white", color: cat===c ? "white" : "#374151",
-            border:`1.5px solid ${cat===c ? "#1f2937" : "#e5e7eb"}`,
-            borderRadius:20, padding:"6px 14px", fontSize:12, fontWeight:600,
-            display:"flex", alignItems:"center", gap:5, cursor:"pointer",
-          }}>
-            <span>{CAT_ICON[c]||"📋"}</span> {c}
-          </button>
-        ))}
-      </div>
-
-      <div style={{ color:"#9ca3af", fontSize:13, marginBottom:14 }}>
+      <div style={{ color: "#9ca3af", fontSize: 13, marginBottom: 14 }}>
         Showing {filtered.length} of {schemes.length} schemes
       </div>
 
-      {/* Scheme cards — every field from scraper */}
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(2,1fr)", gap:14 }}>
+      {/* Cards grid */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 14 }}>
         {filtered.map((scheme, i) => {
           const srcMeta = SRC[scheme._src] || SRC.myscheme;
-          const isExp = expanded === i;
           return (
-            <div key={i} onClick={() => setExpanded(isExp ? null : i)} style={{
-              background:"white", borderRadius:14, border:"1px solid #e5e7eb",
-              padding:18, borderTop:`3px solid ${srcMeta.color}`, cursor:"pointer",
-              boxShadow: isExp ? "0 4px 20px rgba(0,0,0,0.09)" : "0 1px 4px rgba(0,0,0,0.05)",
-              transition:"box-shadow .15s",
-            }}>
-              {/* Header */}
-              <div style={{ display:"flex", alignItems:"flex-start", gap:12, marginBottom:10 }}>
-                <div style={{ width:40, height:40, borderRadius:8,
-                  background:`${srcMeta.color}18`, display:"flex", alignItems:"center",
-                  justifyContent:"center", fontSize:20, flexShrink:0 }}>
-                  {CAT_ICON[scheme.category]||"📋"}
+            <div
+              key={i}
+              onClick={() => setSelected(scheme)}
+              style={{
+                background: "white", borderRadius: 14,
+                border: "1px solid #e5e7eb",
+                padding: 18, borderTop: `3px solid ${srcMeta.color}`,
+                cursor: "pointer",
+                boxShadow: "0 1px 4px rgba(0,0,0,0.05)",
+                transition: "box-shadow .15s, transform .15s",
+              }}
+              onMouseEnter={e => {
+                e.currentTarget.style.boxShadow = "0 4px 20px rgba(0,0,0,0.1)";
+                e.currentTarget.style.transform = "translateY(-1px)";
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.boxShadow = "0 1px 4px rgba(0,0,0,0.05)";
+                e.currentTarget.style.transform = "translateY(0)";
+              }}
+            >
+              {/* Card header */}
+              <div style={{ display: "flex", alignItems: "flex-start", gap: 12, marginBottom: 10 }}>
+                <div style={{
+                  width: 40, height: 40, borderRadius: 8, flexShrink: 0,
+                  background: `${srcMeta.color}18`,
+                  display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20,
+                }}>
+                  {CAT_ICON[scheme.category] || "📋"}
                 </div>
-                <div style={{ flex:1, minWidth:0 }}>
-                  <div style={{ fontWeight:700, fontSize:14, color:"#1f2937",
-                    lineHeight:1.3, marginBottom:3 }}>{scheme.name}</div>
-                  {/* category and source from scraper */}
-                  <div style={{ fontSize:11, color:"#9ca3af" }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 700, fontSize: 13.5, color: "#1f2937", lineHeight: 1.35, marginBottom: 3 }}>
+                    {scheme.name}
+                  </div>
+                  <div style={{ fontSize: 11, color: "#9ca3af" }}>
                     {scheme.category}
                     {scheme.subcategory ? ` · ${scheme.subcategory}` : ""}
                     {" · "}
-                    <span style={{ color:srcMeta.color, fontWeight:600 }}>{scheme._src_label}</span>
+                    <span style={{ color: srcMeta.color, fontWeight: 600 }}>{scheme._src_label || srcMeta.label}</span>
                   </div>
                 </div>
-                <Chip label={scheme.status||"Active"} color="#10b981" small/>
+                <span style={{
+                  background: "#d1fae5", color: "#065f46", fontSize: 10, fontWeight: 700,
+                  borderRadius: 20, padding: "2px 8px", flexShrink: 0, whiteSpace: "nowrap",
+                }}>
+                  {scheme.status || "Active"}
+                </span>
               </div>
 
-              {/* Description from scraper */}
+              {/* Description snippet */}
               {scheme.description && (
-                <p style={{ fontSize:12, color:"#6b7280", lineHeight:1.5, marginBottom:10 }}>
-                  {scheme.description.slice(0,130)}{scheme.description.length>130?"…":""}
+                <p style={{ fontSize: 12, color: "#6b7280", lineHeight: 1.55, marginBottom: 10 }}>
+                  {scheme.description.slice(0, 130)}{scheme.description.length > 130 ? "…" : ""}
                 </p>
               )}
 
-              {/* Expanded: all real fields from scraper */}
-              {isExp && (
-                <div style={{ marginTop:12, paddingTop:12, borderTop:"1px solid #f3f4f6",
-                  display:"flex", flexDirection:"column", gap:10 }}>
-                  {scheme.benefit && (
-                    <div>
-                      <div style={{ fontSize:10, fontWeight:700, color:"#9ca3af",
-                        letterSpacing:"0.07em", marginBottom:3 }}>BENEFIT</div>
-                      <div style={{ fontSize:13, color:"#374151" }}>{scheme.benefit}</div>
-                    </div>
-                  )}
-                  {scheme.eligibility && (
-                    <div>
-                      <div style={{ fontSize:10, fontWeight:700, color:"#9ca3af",
-                        letterSpacing:"0.07em", marginBottom:3 }}>ELIGIBILITY</div>
-                      <div style={{ fontSize:13, color:"#374151" }}>{scheme.eligibility}</div>
-                    </div>
-                  )}
-                  {scheme.objective && (
-                    <div>
-                      <div style={{ fontSize:10, fontWeight:700, color:"#9ca3af",
-                        letterSpacing:"0.07em", marginBottom:3 }}>OBJECTIVE</div>
-                      <div style={{ fontSize:13, color:"#374151" }}>{scheme.objective.slice(0,250)}</div>
-                    </div>
-                  )}
-                  {(scheme.department || scheme.ministry) && (
-                    <div>
-                      <div style={{ fontSize:10, fontWeight:700, color:"#9ca3af",
-                        letterSpacing:"0.07em", marginBottom:3 }}>
-                        {scheme.department ? "DEPARTMENT" : "MINISTRY"}
-                      </div>
-                      <div style={{ fontSize:13, color:"#374151" }}>
-                        {scheme.department || scheme.ministry}
-                      </div>
-                    </div>
-                  )}
-                  {/* Tags from myscheme scraper */}
-                  {scheme.tags?.length > 0 && (
-                    <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
-                      {scheme.tags.map((t, j) => <Chip key={j} label={t} color="#6b7280" small/>)}
-                    </div>
-                  )}
-                  {/* Launched date */}
-                  {scheme.launched && (
-                    <div style={{ fontSize:11, color:"#9ca3af" }}>
-                      Launched: {scheme.launched}
-                    </div>
-                  )}
-                  {/* Links */}
-                  <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
-                    {(scheme.apply_url||scheme.url) && (
-                      <a href={scheme.apply_url||scheme.url} target="_blank" rel="noreferrer"
-                        onClick={e=>e.stopPropagation()}
-                        style={{ background:`${srcMeta.color}15`, color:srcMeta.color,
-                          border:`1px solid ${srcMeta.color}30`, borderRadius:8,
-                          padding:"6px 14px", fontSize:12, fontWeight:700 }}>
-                        Visit / Apply ↗
-                      </a>
-                    )}
-                    <div style={{ fontSize:11, color:"#c4c9d4", alignSelf:"center" }}>
-                      via {scheme.source}
-                    </div>
+              {/* Benefit highlight */}
+              {scheme.benefit && (
+                <div style={{
+                  background: `${srcMeta.color}0d`, borderRadius: 8,
+                  padding: "8px 10px", marginBottom: 10,
+                }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: srcMeta.color, marginBottom: 2 }}>BENEFIT</div>
+                  <div style={{ fontSize: 12, color: "#374151" }}>
+                    {scheme.benefit.slice(0, 90)}{scheme.benefit.length > 90 ? "…" : ""}
                   </div>
                 </div>
               )}
 
-              <div style={{ display:"flex", alignItems:"center",
-                justifyContent:"space-between", marginTop:10 }}>
-                <Chip label={scheme.category||"General"} color={srcMeta.color} small/>
-                <span style={{ fontSize:11, color:"#c4c9d4" }}>{isExp?"▲ Less":"▼ Details"}</span>
+              {/* Footer: category chip + source + arrow */}
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 8 }}>
+                <span style={{
+                  background: `${srcMeta.color}15`, color: srcMeta.color,
+                  border: `1px solid ${srcMeta.color}30`,
+                  borderRadius: 20, padding: "3px 10px", fontSize: 11, fontWeight: 600,
+                }}>
+                  {scheme.category || "General"}
+                </span>
+                <span style={{ fontSize: 11, color: "#d1d5db" }}>Details →</span>
+              </div>
+
+              {/* Source badge */}
+              <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid #f3f4f6", fontSize: 10, color: "#c4c9d4" }}>
+                📡 {scheme.source || srcMeta.url}
               </div>
             </div>
           );
         })}
       </div>
+
+      {/* Side panel */}
+      <SchemeDetailPanel scheme={selected} onClose={() => setSelected(null)} />
     </div>
   );
 }

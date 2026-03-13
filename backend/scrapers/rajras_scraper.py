@@ -146,12 +146,11 @@ def scrape_rajras() -> list[dict]:
         resp.raise_for_status()
     except Exception as e:
         log.error("Failed to fetch RajRAS: %s", e)
-        return _fallback_rajras()
+        raise RuntimeError(f"RajRAS fetch failed: {e}") from e
 
     raw_schemes = _parse_index_page(resp.text)
     if not raw_schemes:
-        log.warning("RajRAS: No schemes parsed, using fallback")
-        return _fallback_rajras()
+        raise RuntimeError("RajRAS scrape returned no scheme records")
 
     ts = datetime.now(timezone.utc).isoformat()
     result = []
@@ -171,39 +170,3 @@ def scrape_rajras() -> list[dict]:
 
     log.info("RajRAS: found %d schemes", len(result))
     return result
-
-
-def _fallback_rajras() -> list[dict]:
-    ts = datetime.now(timezone.utc).isoformat()
-    schemes = [
-        ("Palanhar Yojana", "Social Welfare", "https://rajras.in/palanhar-yojana/"),
-        ("Mukhyamantri Rajshri Yojana", "Education & Skills", "https://rajras.in/rajshri-yojana/"),
-        ("Bhamashah Health Insurance Scheme", "Health & Sanitation", ""),
-        ("Rajasthan Kisan Samman Nidhi", "Agriculture & Allied", ""),
-        ("Chiranjeevi Health Insurance Scheme", "Health & Sanitation", "https://rajras.in/chiranjeevi/"),
-        ("Free Electricity Scheme for Farmers", "Energy", ""),
-        ("Indira Gandhi Urban Credit Card", "Industry & Commerce", ""),
-        ("Mukhyamantri Anuprati Coaching Scheme", "Education & Skills", ""),
-        ("Rajasthan MSME Promotion Scheme", "Industry & Commerce", ""),
-        ("Pradhan Mantri Awas Yojana (Rural)", "Rural Development", ""),
-        ("Mukhyamantri Nishulk Dawa Yojana", "Health & Sanitation", ""),
-        ("Rajasthan Agricultural Processing", "Agriculture & Allied", ""),
-        ("MGNREGA Rajasthan", "Rural Development", ""),
-        ("Old Age Pension Scheme", "Social Welfare", ""),
-        ("Ladli Laxmi Yojana", "Social Welfare", ""),
-    ]
-    return [
-        {
-            "id": f"rajras_{i+1}",
-            "name": name,
-            "category": cat,
-            "subcategory": "",
-            "url": url,
-            "has_article": bool(url),
-            "description": f"Rajasthan government scheme under {cat}",
-            "status": "Active",
-            "source": "rajras.in (fallback)",
-            "scraped_at": ts,
-        }
-        for i, (name, cat, url) in enumerate(schemes)
-    ]

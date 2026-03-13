@@ -195,50 +195,8 @@ def scrape_myscheme() -> list[dict]:
         raw_items = _try_scrape_page(session)
 
     if not raw_items:
-        log.warning("MyScheme: all strategies failed — using fallback")
-        return _fallback_myscheme()
+        raise RuntimeError("MyScheme scrape failed: no live Rajasthan scheme records found")
 
     result = [_normalise_item(item, i, ts) for i, item in enumerate(raw_items)]
     log.info("MyScheme: %d Rajasthan schemes", len(result))
     return result
-
-
-def _fallback_myscheme() -> list[dict]:
-    ts = datetime.now(timezone.utc).isoformat()
-    schemes = [
-        ("PM Kisan Samman Nidhi", "Agriculture", "Ministry of Agriculture", "farmers, income support"),
-        ("Ayushman Bharat PM-JAY", "Health", "Ministry of Health", "health insurance, BPL"),
-        ("PM Awas Yojana Gramin", "Housing", "Ministry of Rural Development", "housing, rural"),
-        ("MGNREGA", "Labour & Employment", "Ministry of Rural Development", "employment, rural"),
-        ("PM Ujjwala Yojana", "Social Welfare", "Ministry of Petroleum", "LPG, women, BPL"),
-        ("Sukanya Samriddhi Yojana", "Women & Child", "Ministry of Finance", "girl child, savings"),
-        ("PM Jan Dhan Yojana", "General", "Ministry of Finance", "banking, financial inclusion"),
-        ("Scholarship for SC/ST Students", "Education", "Ministry of Education", "scholarship, SC, ST"),
-        ("PM Fasal Bima Yojana", "Agriculture", "Ministry of Agriculture", "crop insurance"),
-        ("Soil Health Card Scheme", "Agriculture", "Ministry of Agriculture", "soil, farmers"),
-        ("National Apprenticeship Promotion", "Skill Development", "Ministry of Skill Dev.", "training, youth"),
-        ("PM SVANidhi (Street Vendor Loan)", "Business & Finance", "Ministry of Housing", "loan, vendor"),
-        ("Stand-Up India", "Business & Finance", "Ministry of Finance", "SC, ST, women, loan"),
-        ("PM Mudra Yojana", "Business & Finance", "Ministry of Finance", "MSME, loan, business"),
-        ("Atal Pension Yojana", "Social Welfare", "Ministry of Finance", "pension, workers"),
-        ("Jal Jeevan Mission", "Water & Sanitation", "Ministry of Jal Shakti", "water, rural"),
-        ("PM Poshan (Mid-Day Meal)", "Education", "Ministry of Education", "children, nutrition"),
-        ("National Social Assistance Programme", "Social Welfare", "Ministry of Rural Dev.", "pension, widow"),
-        ("PM Rozgar Protsahan Yojana", "Labour & Employment", "Ministry of Labour", "employment, EPF"),
-        ("Digital India Scheme", "Digital Services", "Ministry of IT", "digital, internet"),
-    ]
-    return [
-        {
-            "id": f"myscheme_{i+1}",
-            "name": name,
-            "category": cat,
-            "ministry": ministry,
-            "tags": tags.split(", "),
-            "url": BASE_URL,
-            "description": f"Central government scheme available for Rajasthan — {cat}",
-            "status": "Active",
-            "source": "myscheme.gov.in (fallback)",
-            "scraped_at": ts,
-        }
-        for i, (name, cat, ministry, tags) in enumerate(schemes)
-    ]

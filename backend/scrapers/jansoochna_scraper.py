@@ -159,52 +159,9 @@ def scrape_jansoochna() -> list[dict]:
     if not raw_items:
         raw_items = _try_playwright()
 
-    # Strategy 3: Fallback
     if not raw_items:
-        log.warning("All JSP scrape methods failed — using fallback data")
-        return _fallback_jansoochna()
+        raise RuntimeError("Jan Soochna scrape failed: no live scheme records found")
 
     result = [_normalise_item(item, i, ts) for i, item in enumerate(raw_items)]
     log.info("Jan Soochna: %d schemes scraped", len(result))
     return result
-
-
-def _fallback_jansoochna() -> list[dict]:
-    ts = datetime.now(timezone.utc).isoformat()
-    schemes = [
-        ("Jan Aadhaar", "Identity & Social Security", "Dept. of Planning"),
-        ("Chiranjeevi Health Insurance", "Health & Medical", "Dept. of Health"),
-        ("Mukhyamantri Nishulk Dawa Yojana", "Health & Medical", "Dept. of Health"),
-        ("Palanhar Yojana", "Social Welfare", "Dept. of Social Justice"),
-        ("Social Security Pension", "Social Welfare", "Dept. of Social Justice"),
-        ("MGNREGA Rajasthan", "Rural Development", "Dept. of Rural Dev."),
-        ("PM Kisan Samman Nidhi", "Agriculture", "Dept. of Agriculture"),
-        ("PM Awas Yojana Gramin", "Rural Development", "Dept. of Rural Dev."),
-        ("Food Security (NFSA)", "Food & Civil Supplies", "Dept. of Food"),
-        ("Scholarship Schemes (SC/ST)", "Education", "Dept. of Education"),
-        ("Shramik Card / Labour Scheme", "Labour", "Dept. of Labour"),
-        ("Rajasthan Sampark", "Digital Services", "DoIT&C"),
-        ("E-Mitra Services", "Digital Services", "DoIT&C"),
-        ("Mining DMFT", "Mining", "Dept. of Mines"),
-        ("Bhamashah Rozgar Srijan Scheme", "Labour", "Dept. of Labour"),
-        ("Indira Rasoi Yojana", "Food & Civil Supplies", "Dept. of Food"),
-        ("Jal Jeevan Mission", "Water & Sanitation", "PHED"),
-        ("Swachh Bharat Mission", "Water & Sanitation", "Dept. of PR"),
-        ("PM Ujjwala Yojana", "Social Welfare", ""),
-        ("Ayushman Bharat PMJAY", "Health & Medical", "Dept. of Health"),
-    ]
-    return [
-        {
-            "id": f"jsp_{i+1}",
-            "name": name,
-            "category": cat,
-            "department": dept,
-            "url": f"{BASE_URL}/Scheme",
-            "description": f"Available on Jan Soochna Portal — {cat}",
-            "beneficiary_count": "",
-            "status": "Active",
-            "source": "jansoochna.rajasthan.gov.in (fallback)",
-            "scraped_at": ts,
-        }
-        for i, (name, cat, dept) in enumerate(schemes)
-    ]
