@@ -18,9 +18,6 @@ from scrapers.budget_scraper     import scrape_budget
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s — %(message)s")
 log = logging.getLogger("api")
 
-app = FastAPI(title="Rajasthan Dashboard API v3")
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
-
 _cache: dict = {}
 SCRAPERS = {
     "igod":       scrape_igod,
@@ -50,6 +47,27 @@ async def _run(sid, fn):
         log.error("❌ %s: %s", sid, e)
         _store(sid, [], "error", str(e))
     return _cache[sid]
+
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def lifespan(app):
+    """Auto-scrape all sources on startup so cache is never empty."""
+    log.info("Startup: pre-loading all scrapers in background…")
+    async def _bg():
+        await asyncio.gather(
+            _run("rajras",     scrape_rajras),
+            _run("jansoochna", scrape_jansoochna),
+            _run("myscheme",   scrape_myscheme),
+            _run("igod",       scrape_igod),
+            return_exceptions=True,
+        )
+        log.info("Startup scraping complete")
+    asyncio.create_task(_bg())
+    yield
+
+app = FastAPI(title="Rajasthan Dashboard API v3", lifespan=lifespan)
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 # ── routes ─────────────────────────────────────────────────────────────────────
 @app.get("/")

@@ -382,7 +382,32 @@ function DashboardTab({ agg, srcStatus, onScrapeAll, onScrapeOne, scraping, scra
 function SchemeDetailPanel({ scheme, onClose }) {
   if (!scheme) return null;
   const srcMeta = SRC[scheme._src] || SRC.myscheme;
-  const sourceUrl = scheme.apply_url || scheme.url || `https://${srcMeta.url}`;
+  // Build the best possible "Know More" URL:
+  // 1. Use the scheme's own specific URL if it's not just the bare homepage
+  // 2. Otherwise deep-link to the source site's search/listing page for this scheme
+  const bareUrls = [
+    "https://rajras.in", "https://rajras.in/", "https://www.rajras.in",
+    "https://www.myscheme.gov.in", "https://myscheme.gov.in",
+    "https://jansoochna.rajasthan.gov.in", "https://jansoochna.rajasthan.gov.in/Scheme",
+  ];
+  const schemeSpecificUrl = scheme.apply_url || scheme.url || "";
+  const isGenericUrl = !schemeSpecificUrl || bareUrls.includes(schemeSpecificUrl.replace(/\/$/, ""));
+
+  let sourceUrl;
+  if (!isGenericUrl) {
+    sourceUrl = schemeSpecificUrl;
+  } else if (scheme._src === "rajras") {
+    // RajRAS search — encode scheme name to search
+    sourceUrl = `https://rajras.in/?s=${encodeURIComponent(scheme.name)}`;
+  } else if (scheme._src === "myscheme") {
+    // MyScheme — direct search URL
+    sourceUrl = `https://www.myscheme.gov.in/search?q=${encodeURIComponent(scheme.name)}&state=Rajasthan`;
+  } else if (scheme._src === "jansoochna") {
+    // Jan Soochna Portal scheme list
+    sourceUrl = `https://jansoochna.rajasthan.gov.in/Scheme`;
+  } else {
+    sourceUrl = `https://${srcMeta.url}`;
+  }
 
   // Derive values from scraped fields
   const beneficiaries = scheme.beneficiary_count || scheme.beneficiaries || "Open to all";
@@ -665,25 +690,37 @@ function SchemesTab({ agg, onScrapeAll }) {
   const { schemes, categories } = agg;
   const allCats = (categories || []).map(c => c.name);
 
-  // Map screenshot category pills to actual category names in data
+  // Category pills — each maps to multiple real category strings from scrapers
+  // RajRAS uses:      "Agriculture & Allied", "Health & Sanitation", "Education & Skills",
+  //                   "Social Welfare", "Labour & Employment", "Rural Development",
+  //                   "Urban Development", "Industry & Commerce", "Energy", "Digital & IT", etc.
+  // Jan Soochna uses: "Health & Medical", "Social Welfare", "Agriculture", "Food & Civil Supplies",
+  //                   "Labour", "Education", "Rural Development", "Digital Services", etc.
+  // MyScheme uses:    "Health", "Education", "Agriculture", "Social Welfare",
+  //                   "Labour & Employment", "Women & Child", "Housing", "Energy", "Digital Services"
   const PILL_CATS = [
-    { id: "all",        label: "All",        icon: null },
-    { id: "Health",     label: "Health",     icon: "🏥" },
-    { id: "Education",  label: "Education",  icon: "🎓" },
-    { id: "Agriculture",label: "Agriculture",icon: "🌾" },
-    { id: "Social",     label: "Social",     icon: "🛡️" },
-    { id: "Employment", label: "Employment", icon: "💼" },
-    { id: "Women",      label: "Women",      icon: "👩" },
-    { id: "Housing",    label: "Housing",    icon: "🏠" },
-    { id: "Food",       label: "Food",       icon: "🍽️" },
-    { id: "Water",      label: "Water",      icon: "💧" },
-    { id: "Energy",     label: "Energy",     icon: "⚡" },
-    { id: "Digital",    label: "Digital",    icon: "💻" },
+    { id: "all",        label: "All",        icon: null,  match: null },
+    { id: "health",     label: "Health",     icon: "🏥",  match: /health|medical|sanit|ayush|hospital|dawa/i },
+    { id: "education",  label: "Education",  icon: "🎓",  match: /education|school|scholar|skill|training|vocational/i },
+    { id: "agriculture",label: "Agriculture",icon: "🌾",  match: /agri|kisan|farm|crop|horticulture|animal|dairy|allied/i },
+    { id: "social",     label: "Social",     icon: "🛡️",  match: /social|pension|welfare|palanhar|widow|disabled|minority/i },
+    { id: "employment", label: "Employment", icon: "💼",  match: /labour|labor|employment|rozgar|worker|job|mgnrega|shramik|apprentice|nrega|rural dev/i },
+    { id: "women",      label: "Women",      icon: "👩",  match: /women|mahila|girl|beti|child/i },
+    { id: "housing",    label: "Housing",    icon: "🏠",  match: /housing|awas|shelter|urban/i },
+    { id: "food",       label: "Food",       icon: "🍽️",  match: /food|ration|pds|nfsa|rasoi|civil suppli/i },
+    { id: "water",      label: "Water",      icon: "💧",  match: /water|jal|sanitation|swachh|irrigation/i },
+    { id: "energy",     label: "Energy",     icon: "⚡",  match: /energy|solar|electricity|power|renewable/i },
+    { id: "digital",    label: "Digital",    icon: "💻",  match: /digital|it\b|technology|e-gov|e.mitra|cyber|services.*it/i },
   ];
 
   const filtered = schemes.filter(s => {
-    const mCat = cat === "all" || (s.category || "").toLowerCase().includes(cat.toLowerCase());
-    const mQ   = !search ||
+    // Test against category + subcategory + name + department + ministry
+    // so pills work across all 3 scrapers which use different category strings
+    const catStr = [s.category, s.subcategory, s.name, s.department, s.ministry]
+      .filter(Boolean).join(" ");
+    const pill   = PILL_CATS.find(p => p.id === cat);
+    const mCat   = cat === "all" || (pill?.match && pill.match.test(catStr));
+    const mQ     = !search ||
       s.name?.toLowerCase().includes(search.toLowerCase()) ||
       s.description?.toLowerCase().includes(search.toLowerCase()) ||
       s.benefit?.toLowerCase().includes(search.toLowerCase()) ||
