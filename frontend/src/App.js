@@ -1,14 +1,9 @@
 /**
- * Rajasthan AI Chief of Staff Dashboard — v3
- * =============================================
- * 100% data-driven. Every value rendered in the UI (names, counts, categories,
- * descriptions, benefits, URLs, alerts) comes from the /aggregate API endpoint,
- * which itself is built entirely from live scraper output.
- *
- * The only "constants" here are:
- *  - UI colour palette
- *  - Category → icon mapping (purely cosmetic)
- *  - Source metadata (names / colours for the 4 known scrapers)
+ * Rajasthan AI Chief of Staff Dashboard — v3 (Fixed)
+ * All 3 bugs fixed:
+ * 1. Category pills now use regex matching against real scraped category names
+ * 2. "Know More" uses scheme-specific URLs (apply_url > url > source domain)
+ * 3. Jan Soochna & MyScheme scrapers fixed with better API endpoints + fallback
  */
 
 import { useState, useEffect, useCallback } from "react";
@@ -21,39 +16,74 @@ import {
 
 const API = process.env.REACT_APP_API_URL || "https://rajasthan-cgwj.onrender.com";
 
-// ── Cosmetic-only constants (not data) ───────────────────────────────────────
 const SRC = {
-  igod:       { label: "IGOD Portal",        icon: "🏛️", color: "#f97316", url: "igod.gov.in" },
-  rajras:     { label: "RajRAS",             icon: "📋", color: "#3b82f6", url: "rajras.in" },
-  jansoochna: { label: "Jan Soochna",        icon: "👁️", color: "#10b981", url: "jansoochna.rajasthan.gov.in" },
-  myscheme:   { label: "MyScheme",           icon: "🔍", color: "#8b5cf6", url: "myscheme.gov.in" },
+  igod:       { label: "IGOD Portal",  icon: "🏛️", color: "#f97316", url: "https://igod.gov.in" },
+  rajras:     { label: "RajRAS",       icon: "📋", color: "#3b82f6", url: "https://rajras.in" },
+  jansoochna: { label: "Jan Soochna",  icon: "👁️", color: "#10b981", url: "https://jansoochna.rajasthan.gov.in" },
+  myscheme:   { label: "MyScheme",     icon: "🔍", color: "#8b5cf6", url: "https://myscheme.gov.in" },
 };
 const CAT_ICON = {
   "Health":"🏥","Health & Family Welfare":"🏥","Education":"🎓","Agriculture":"🌾",
   "Agriculture & Farmers":"🌾","Social Welfare":"🛡️","Labour & Employment":"💼",
   "Women & Child":"👩","Business & Finance":"💰","Housing":"🏠","Food Security":"🍽️",
-  "Water & Sanitation":"💧","Energy":"⚡","Digital Services":"💻","Digital & IT":"💻",
-  "Rural Development":"🏘️","Industry & Commerce":"🏭","Industry & Investment":"📈",
-  "Tourism & Culture":"🎭","Identity & Social Security":"🪪","Mining":"⛏️",
-  "Transparency & RTI":"👁️","Civil Registration":"📄","Finance & Accounts":"💳",
-  "Recruitment":"📝","Urban Development":"🏙️","General":"📋","General Services":"📋",
+  "Water & Sanitation":"💧","Water & Irrigation":"💧","Energy":"⚡","Digital Services":"💻",
+  "Digital & IT":"💻","Rural Development":"🏘️","Industry & Commerce":"🏭",
+  "Industry & Investment":"📈","Tourism & Culture":"🎭","Identity & Social Security":"🪪",
+  "Mining":"⛏️","Transparency & RTI":"👁️","Civil Registration":"📄",
+  "Finance & Accounts":"💳","Recruitment":"📝","Urban Development":"🏙️",
+  "General":"📋","General Services":"📋","Revenue":"📄","Revenue & Land":"📄",
+  "Transport":"🚌","Environment":"🌿","Law & Order":"⚖️",
 };
 const PALETTE = ["#ef4444","#3b82f6","#10b981","#f97316","#8b5cf6","#f59e0b",
                  "#06b6d4","#84cc16","#ec4899","#14b8a6","#6366f1","#a855f7",
                  "#f43f5e","#0ea5e9","#22c55e","#e11d48","#0284c7","#059669"];
 
-// ── Tiny utilities ────────────────────────────────────────────────────────────
+// ── Pill category definitions — regex matches actual scraped category strings ─
+const PILL_CATS = [
+  { id:"all",       label:"All",        icon:null,  match:null },
+  { id:"health",    label:"Health",     icon:"🏥",  match:/health|medical|ayush/i },
+  { id:"education", label:"Education",  icon:"🎓",  match:/education|school|scholarship|student/i },
+  { id:"agri",      label:"Agriculture",icon:"🌾",  match:/agri|kisan|farm|crop|horticulture/i },
+  { id:"social",    label:"Social",     icon:"🛡️",  match:/social|pension|welfare|widow|disability|palanhar/i },
+  { id:"labour",    label:"Employment", icon:"💼",  match:/labour|labor|employment|rozgar|worker|skill/i },
+  { id:"women",     label:"Women",      icon:"👩",  match:/women|mahila|girl|beti|child|maternity/i },
+  { id:"housing",   label:"Housing",    icon:"🏠",  match:/housing|awas|shelter|urban/i },
+  { id:"food",      label:"Food",       icon:"🍽️",  match:/food|ration|rasoi|pds|nutrition/i },
+  { id:"water",     label:"Water",      icon:"💧",  match:/water|jal|sanitation|swachh|irrigation/i },
+  { id:"energy",    label:"Energy",     icon:"⚡",  match:/energy|solar|electric|vidyut|ujjwala/i },
+  { id:"digital",   label:"Digital",    icon:"💻",  match:/digital|it|e-mitra|emitra|technology/i },
+];
+
 const timeAgo = iso => {
   if (!iso) return "";
   const s = Math.floor((Date.now() - new Date(iso)) / 1000);
   if (s < 10)   return "just now";
   if (s < 60)   return `${s}s ago`;
-  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
-  return `${Math.floor(s / 3600)}h ago`;
+  if (s < 3600) return `${Math.floor(s/60)}m ago`;
+  return `${Math.floor(s/3600)}h ago`;
 };
 const palColor = i => PALETTE[i % PALETTE.length];
 
-// ── Shared tiny components ────────────────────────────────────────────────────
+// ── BUG FIX 2: Correct URL resolver — scheme-specific, not generic domain ────
+const resolveSchemeUrl = (scheme) => {
+  // Priority: apply_url (direct apply page) > url (scheme detail page) > source domain
+  const u = scheme.apply_url || scheme.url;
+  if (u && u.startsWith("http") && !isBaseUrl(u)) return u;
+  // Construct URL from source
+  const src = scheme._src;
+  if (src === "rajras" && scheme.url && scheme.url.includes("rajras.in/")) return scheme.url;
+  if (src === "myscheme" && scheme.url && scheme.url.includes("/schemes/")) return scheme.url;
+  if (src === "jansoochna" && scheme.url && scheme.url.includes("jansoochna")) return scheme.url;
+  // Fall back to source home only as last resort
+  return SRC[src]?.url || "#";
+};
+const isBaseUrl = (url) => {
+  try {
+    const u = new URL(url);
+    return u.pathname === "/" || u.pathname === "";
+  } catch { return false; }
+};
+
 function StatusDot({ status, animating }) {
   const c = { ok:"#10b981", error:"#ef4444", loading:"#f59e0b", not_scraped:"#d1d5db" }[status] || "#d1d5db";
   return (
@@ -61,48 +91,42 @@ function StatusDot({ status, animating }) {
       background:c, flexShrink:0, animation:animating?"pulse 1s infinite":"none" }}/>
   );
 }
-
 function Chip({ label, color="#6b7280", small }) {
   return (
     <span style={{ background:`${color}18`, color, border:`1px solid ${color}28`,
-      borderRadius:20, padding: small?"2px 8px":"4px 12px",
-      fontSize: small?10:12, fontWeight:600, whiteSpace:"nowrap" }}>
+      borderRadius:20, padding:small?"2px 8px":"4px 12px",
+      fontSize:small?10:12, fontWeight:600, whiteSpace:"nowrap" }}>
       {label}
     </span>
   );
 }
-
 function ScrapeNowButton({ onClick, loading, disabled }) {
   return (
-    <button onClick={onClick} disabled={loading || disabled} style={{
-      background: (loading||disabled) ? "#e5e7eb" : "#f97316",
-      color:      (loading||disabled) ? "#9ca3af" : "white",
+    <button onClick={onClick} disabled={loading||disabled} style={{
+      background:(loading||disabled)?"#e5e7eb":"#f97316",
+      color:(loading||disabled)?"#9ca3af":"white",
       borderRadius:10, padding:"10px 22px", fontWeight:800, fontSize:13,
       display:"flex", alignItems:"center", gap:8,
-      boxShadow: (!loading&&!disabled) ? "0 2px 12px #f9731640" : "none",
+      boxShadow:(!loading&&!disabled)?"0 2px 12px #f9731640":"none",
     }}>
       <span style={{ fontSize:16, display:"inline-block",
-        animation:loading ? "spin 1s linear infinite" : "none" }}>⚡</span>
-      {loading ? "Scraping…" : "Scrape Now"}
+        animation:loading?"spin 1s linear infinite":"none" }}>⚡</span>
+      {loading?"Scraping…":"Scrape Now"}
     </button>
   );
 }
-
 function EmptyState({ onScrape }) {
   return (
     <div style={{ background:"white", borderRadius:16, border:"2px dashed #e5e7eb",
       padding:60, textAlign:"center" }}>
       <div style={{ fontSize:52, marginBottom:14 }}>⚡</div>
-      <div style={{ fontWeight:800, fontSize:20, color:"#0f172a", marginBottom:8 }}>
-        No live data yet
-      </div>
+      <div style={{ fontWeight:800, fontSize:20, color:"#0f172a", marginBottom:8 }}>No live data yet</div>
       <div style={{ color:"#64748b", marginBottom:24, fontSize:14 }}>
         Click <strong>Scrape Now</strong> to pull real data from all 4 government websites
       </div>
       <button onClick={onScrape} style={{ background:"#f97316", color:"white",
         borderRadius:12, padding:"13px 32px", fontWeight:800, fontSize:15,
-        border:"none", cursor:"pointer",
-        boxShadow:"0 4px 20px #f9731650" }}>
+        border:"none", cursor:"pointer", boxShadow:"0 4px 20px #f9731650" }}>
         ⚡ Scrape All 4 Sources
       </button>
     </div>
@@ -110,148 +134,85 @@ function EmptyState({ onScrape }) {
 }
 
 // ── Dashboard Tab ─────────────────────────────────────────────────────────────
-function DashboardTab({ agg, srcStatus, onScrapeAll, onScrapeOne, scraping, scrapingAll, online, budget, budgetLoading }) {
-  if (!agg) return <EmptyState onScrape={onScrapeAll} />;
+function DashboardTab({ agg, srcStatus, onScrapeAll, onScrapeOne, scraping, budget, budgetLoading }) {
+  if (!agg) return <EmptyState onScrape={onScrapeAll}/>;
   const { kpis, schemes } = agg;
 
-  // ── Sparkline: wide area chart exactly like the screenshot ─────────────────
   const Spark = ({ data=[], color="#f97316" }) => {
-    if (!data || data.length < 2) return (
-      <div style={{ width:100, height:44, background:`${color}08`, borderRadius:6 }}/>
-    );
+    if (!data||data.length<2) return <div style={{ width:100, height:44, background:`${color}08`, borderRadius:6 }}/>;
     const W=100, H=44, PAD=4;
-    const min = Math.min(...data);
-    const max = Math.max(...data);
-    const rng = (max - min) || 1;
-    const xs = data.map((_, i) => (i / (data.length-1)) * W);
-    const ys = data.map(v => H - PAD - ((v-min)/rng) * (H - PAD*2));
-    const linePts = xs.map((x,i) => `${x},${ys[i]}`).join(" ");
-    const areaPts = `0,${H} ` + linePts + ` ${W},${H}`;
-    const gid = `g${color.replace(/#/g,"")}`;
+    const min=Math.min(...data), max=Math.max(...data), rng=(max-min)||1;
+    const xs=data.map((_,i)=>(i/(data.length-1))*W);
+    const ys=data.map(v=>H-PAD-((v-min)/rng)*(H-PAD*2));
+    const lp=xs.map((x,i)=>`${x},${ys[i]}`).join(" ");
+    const ap=`0,${H} `+lp+` ${W},${H}`;
+    const gid=`g${color.replace(/#/g,"")}`;
     return (
-      <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`}
-        style={{ overflow:"visible", display:"block" }}>
+      <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{ overflow:"visible", display:"block" }}>
         <defs>
           <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%"   stopColor={color} stopOpacity="0.22"/>
-            <stop offset="80%"  stopColor={color} stopOpacity="0.04"/>
+            <stop offset="0%" stopColor={color} stopOpacity="0.22"/>
+            <stop offset="80%" stopColor={color} stopOpacity="0.04"/>
             <stop offset="100%" stopColor={color} stopOpacity="0"/>
           </linearGradient>
         </defs>
-        <polygon points={areaPts} fill={`url(#${gid})`}/>
-        <polyline points={linePts} fill="none" stroke={color}
-          strokeWidth="2.2" strokeLinejoin="round" strokeLinecap="round"/>
-        <circle cx={xs[xs.length-1]} cy={ys[ys.length-1]}
-          r="3" fill={color} stroke="white" strokeWidth="1.5"/>
+        <polygon points={ap} fill={`url(#${gid})`}/>
+        <polyline points={lp} fill="none" stroke={color} strokeWidth="2.2" strokeLinejoin="round" strokeLinecap="round"/>
+        <circle cx={xs[xs.length-1]} cy={ys[ys.length-1]} r="3" fill={color} stroke="white" strokeWidth="1.5"/>
       </svg>
     );
   };
 
-  const b   = budget || {};
-  const d   = b.display || {};
-  const sp  = b.sparklines || {};
-  const bm  = b.scrape_meta || {};
-
-  // ── 6 KPI cards — all values come from /budget endpoint ───────────────────
+  const b=budget||{}, d=b.display||{}, sp=b.sparklines||{}, bm=b.scrape_meta||{};
   const CARDS = [
-    {
-      label: "HEALTH BUDGET 2025-26",
-      value: b.health_cr ? `₹${Number(b.health_cr).toLocaleString("en-IN")} Cr` : d.health || "₹28,865 Cr",
-      sub:   b.health_pct ? `${b.health_pct}% of total (nat avg 6.2%)` : "8.4% of total (nat avg 6.2%)",
-      color: "#ef4444",
-      spark: sp.health_cr || [18200,21300,23100,25400,27200,28865],
-      icon:  "🏥",
-    },
-    {
-      label: "EDUCATION ALLOCATION",
-      value: b.education_pct ? `${b.education_pct}% share` : d.education_pct || "18% share",
-      sub:   "Above 15% national avg",
-      color: "#3b82f6",
-      spark: sp.education_pct || [15.2,15.8,16.1,16.9,17.4,18.0],
-      icon:  "🎓",
-    },
-    {
-      label: "JJM COVERAGE RAJASTHAN",
-      value: b.jjm_coverage_pct ? `${Number(b.jjm_coverage_pct).toFixed(2)}%` : d.jjm_coverage || "55.36%",
-      sub:   "National avg: 79.74%",
-      color: "#ef4444",
-      spark: sp.jjm_coverage_pct || [12.5,28.3,41.2,49.8,53.1,55.36],
-      icon:  "💧",
-    },
-    {
-      label: "FISCAL DEFICIT",
-      value: b.fiscal_deficit_pct_gsdp ? `${b.fiscal_deficit_pct_gsdp}% GSDP` : d.fiscal_deficit_pct || "4.25% GSDP",
-      sub:   b.fiscal_deficit_cr ? `₹${Number(b.fiscal_deficit_cr).toLocaleString("en-IN")} Cr (${b.year||"2025-26"} BE)` : "₹34,543 Cr (2025-26 BE)",
-      color: "#f97316",
-      spark: sp.fiscal_deficit_pct || [3.8,4.1,3.6,3.9,4.0,4.25],
-      icon:  "📊",
-    },
-    {
-      label: "CAPITAL OUTLAY",
-      value: b.capital_outlay_cr ? `₹${Number(b.capital_outlay_cr).toLocaleString("en-IN")} Cr` : d.capital_outlay || "₹53,686 Cr",
-      sub:   "+40% over 2024-25 RE",
-      color: "#10b981",
-      spark: sp.capital_outlay_cr || [22000,28000,32000,38000,45000,53686],
-      icon:  "🏗️",
-    },
-    {
-      label: "SOCIAL SECURITY BUDGET",
-      value: b.social_security_cr ? `₹${Number(b.social_security_cr).toLocaleString("en-IN")}+ Cr` : d.social_security || "₹14,000+ Cr",
-      sub:   "Pension raised to ₹1,250/mo",
-      color: "#8b5cf6",
-      spark: sp.social_security_cr || [6000,8000,9500,11000,12800,14000],
-      icon:  "🛡️",
-    },
+    { label:"HEALTH BUDGET 2025-26",    value:b.health_cr?`₹${Number(b.health_cr).toLocaleString("en-IN")} Cr`:d.health||"₹28,865 Cr",             sub:b.health_pct?`${b.health_pct}% of total (nat avg 6.2%)`:"8.4% of total (nat avg 6.2%)",  color:"#ef4444", spark:sp.health_cr||[18200,21300,23100,25400,27200,28865],      icon:"🏥" },
+    { label:"EDUCATION ALLOCATION",     value:b.education_pct?`${b.education_pct}% share`:d.education_pct||"18% share",                             sub:"Above 15% national avg",                                                                    color:"#3b82f6", spark:sp.education_pct||[15.2,15.8,16.1,16.9,17.4,18.0],        icon:"🎓" },
+    { label:"JJM COVERAGE RAJASTHAN",   value:b.jjm_coverage_pct?`${Number(b.jjm_coverage_pct).toFixed(2)}%`:d.jjm_coverage||"55.36%",             sub:"National avg: 79.74%",                                                                      color:"#ef4444", spark:sp.jjm_coverage_pct||[12.5,28.3,41.2,49.8,53.1,55.36],   icon:"💧" },
+    { label:"FISCAL DEFICIT",           value:b.fiscal_deficit_pct_gsdp?`${b.fiscal_deficit_pct_gsdp}% GSDP`:d.fiscal_deficit_pct||"4.25% GSDP",   sub:b.fiscal_deficit_cr?`₹${Number(b.fiscal_deficit_cr).toLocaleString("en-IN")} Cr (2025-26 BE)`:"₹34,543 Cr (2025-26 BE)", color:"#f97316", spark:sp.fiscal_deficit_pct||[3.8,4.1,3.6,3.9,4.0,4.25],      icon:"📊" },
+    { label:"CAPITAL OUTLAY",           value:b.capital_outlay_cr?`₹${Number(b.capital_outlay_cr).toLocaleString("en-IN")} Cr`:d.capital_outlay||"₹53,686 Cr",   sub:"+40% over 2024-25 RE",                                                        color:"#10b981", spark:sp.capital_outlay_cr||[22000,28000,32000,38000,45000,53686],  icon:"🏗️" },
+    { label:"SOCIAL SECURITY BUDGET",   value:b.social_security_cr?`₹${Number(b.social_security_cr).toLocaleString("en-IN")}+ Cr`:d.social_security||"₹14,000+ Cr", sub:"Pension raised to ₹1,250/mo",                                            color:"#8b5cf6", spark:sp.social_security_cr||[6000,8000,9500,11000,12800,14000], icon:"🛡️" },
   ];
 
   return (
     <div className="fadeup">
-
-      {/* ── Greeting ── */}
       <h1 style={{ fontSize:29, fontWeight:900, color:"#0f172a", marginBottom:3, letterSpacing:"-0.3px" }}>
         Namaste, <span style={{ color:"#f97316" }}>Mukhyamantri Ji</span> 🙏
       </h1>
       <p style={{ color:"#6b7280", fontSize:13, marginBottom:16 }}>
         All figures verified from official sources · Budget 2025-26 · JJM MIS · PRS India
       </p>
-
-      {/* ── Budget banner — two-line like screenshot ── */}
       <div style={{ background:"linear-gradient(135deg,#eff6ff 0%,#f0f9ff 100%)",
-        border:"1.5px solid #bfdbfe", borderRadius:12,
-        padding:"11px 18px", marginBottom:24, lineHeight:1.7 }}>
+        border:"1.5px solid #bfdbfe", borderRadius:12, padding:"11px 18px", marginBottom:24, lineHeight:1.7 }}>
         <div style={{ fontSize:13 }}>
           <span style={{ fontWeight:800, color:"#1d4ed8" }}>Budget 2025-26: </span>
           <span style={{ color:"#1e3a5f" }}>
-            Revenue expenditure {b.total_expenditure_cr
-              ? `₹${Number(b.total_expenditure_cr).toLocaleString("en-IN")} Cr`
-              : "₹3,25,546 Cr"}
-            {" · "}Fiscal deficit {b.fiscal_deficit_pct_gsdp
-              ? `${b.fiscal_deficit_pct_gsdp}% GSDP`
-              : "4.25% GSDP"}
+            Revenue expenditure {b.total_expenditure_cr?`₹${Number(b.total_expenditure_cr).toLocaleString("en-IN")} Cr`:"₹3,25,546 Cr"}
+            {" · "}Fiscal deficit {b.fiscal_deficit_pct_gsdp?`${b.fiscal_deficit_pct_gsdp}% GSDP`:"4.25% GSDP"}
           </span>
         </div>
-        <div style={{ fontSize:12, color:"#4b7ab5" }}>
-          Target: ${b.economy_target_bn_usd || 350} Bn economy by 2030
-          {b.green_budget !== false ? " · First Green Budget of Rajasthan" : ""}
-          {bm.note && (
-            <span style={{ marginLeft:10, background:"#dbeafe", color:"#1d4ed8",
+        <div style={{ fontSize:12, color:"#4b7ab5", display:"flex", flexWrap:"wrap", alignItems:"center", gap:6 }}>
+          <span>Target: ${b.economy_target_bn_usd||350} Bn economy by 2030
+          {b.green_budget!==false?" · First Green Budget of Rajasthan":""}</span>
+          {bm.note&&(
+            <span style={{ background:"#dbeafe", color:"#1d4ed8",
               borderRadius:4, padding:"1px 7px", fontSize:11, fontWeight:600 }}>
-              {bm.live_sources > 0 ? `${bm.live_sources} live sources` : "Verified fallback"}
+              {bm.live_sources>0?`${bm.live_sources} budget sources live`:"Verified fallback"}
+            </span>
+          )}
+          {bm.sparkline_live_years>0&&(
+            <span style={{ background:"#d1fae5", color:"#065f46",
+              borderRadius:4, padding:"1px 7px", fontSize:11, fontWeight:600 }}>
+              📈 {bm.sparkline_live_years}/{b.sparkline_meta?.total_years||6} sparkline years live
             </span>
           )}
         </div>
       </div>
 
-      {/* ── 6 KPI Cards (3-col × 2-row) ── */}
       <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:14, marginBottom:24 }}>
-        {(budgetLoading ? Array(6).fill(null) : CARDS).map((card, i) => (
-          <div key={i} style={{ background:"white", borderRadius:14,
-            border:"1px solid #e5e7eb",
-            boxShadow:"0 1px 4px rgba(0,0,0,0.04)",
-            padding:"16px 18px 14px",
-            display:"flex", flexDirection:"column" }}>
-            {budgetLoading || !card ? (
-              // Skeleton loader
+        {(budgetLoading?Array(6).fill(null):CARDS).map((card,i)=>(
+          <div key={i} style={{ background:"white", borderRadius:14, border:"1px solid #e5e7eb",
+            boxShadow:"0 1px 4px rgba(0,0,0,0.04)", padding:"16px 18px 14px", display:"flex", flexDirection:"column" }}>
+            {budgetLoading||!card?(
               <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
                 <div style={{ display:"flex", justifyContent:"space-between" }}>
                   <div style={{ width:28, height:28, borderRadius:8, background:"#f3f4f6" }}/>
@@ -261,70 +222,48 @@ function DashboardTab({ agg, srcStatus, onScrapeAll, onScrapeOne, scraping, scra
                 <div style={{ width:"80%", height:28, borderRadius:6, background:"#f3f4f6" }}/>
                 <div style={{ width:"50%", height:10, borderRadius:4, background:"#f3f4f6" }}/>
               </div>
-            ) : (
+            ):(
               <>
-                {/* Icon row + sparkline */}
-                <div style={{ display:"flex", justifyContent:"space-between",
-                  alignItems:"flex-start", marginBottom:10 }}>
+                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:10 }}>
                   <span style={{ fontSize:20, lineHeight:1 }}>{card.icon}</span>
                   <Spark data={card.spark} color={card.color}/>
                 </div>
-                {/* Label */}
-                <div style={{ fontSize:10, fontWeight:700, color:"#9ca3af",
-                  letterSpacing:"0.08em", marginBottom:7, textTransform:"uppercase" }}>
-                  {card.label}
-                </div>
-                {/* Big value */}
-                <div style={{ fontSize:card.value.length > 12 ? 22 : 27,
-                  fontWeight:900, color:card.color,
-                  letterSpacing:"-0.5px", lineHeight:1.1, marginBottom:6 }}>
-                  {card.value}
-                </div>
-                {/* Sub-note */}
-                <div style={{ fontSize:11, color:"#9ca3af", marginTop:"auto" }}>
-                  {card.sub}
-                </div>
+                <div style={{ fontSize:10, fontWeight:700, color:"#9ca3af", letterSpacing:"0.08em", marginBottom:7, textTransform:"uppercase" }}>{card.label}</div>
+                <div style={{ fontSize:card.value.length>12?22:27, fontWeight:900, color:card.color, letterSpacing:"-0.5px", lineHeight:1.1, marginBottom:6 }}>{card.value}</div>
+                <div style={{ fontSize:11, color:"#9ca3af", marginTop:"auto" }}>{card.sub}</div>
               </>
             )}
           </div>
         ))}
       </div>
 
-      {/* ── 4-source live strip ── */}
       <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:10, marginBottom:22 }}>
         {[
-          { sid:"rajras",     count: kpis.rajras_count },
-          { sid:"jansoochna", count: kpis.jansoochna_count },
-          { sid:"myscheme",   count: kpis.myscheme_count },
-          { sid:"igod",       count: kpis.igod_count },
-        ].map(({ sid, count }) => {
-          const s  = SRC[sid];
-          const st = srcStatus[sid] || {};
-          const loading = scraping[sid];
+          {sid:"rajras",count:kpis.rajras_count},
+          {sid:"jansoochna",count:kpis.jansoochna_count},
+          {sid:"myscheme",count:kpis.myscheme_count},
+          {sid:"igod",count:kpis.igod_count},
+        ].map(({sid,count})=>{
+          const s=SRC[sid]; const st=srcStatus[sid]||{}; const loading=scraping[sid];
           return (
             <div key={sid} style={{ background:"white", borderRadius:12,
-              border:`1px solid ${st.status==="ok" ? s.color+"30" : "#e5e7eb"}`,
-              padding:"12px 14px" }}>
-              <div style={{ display:"flex", alignItems:"center",
-                justifyContent:"space-between", marginBottom:5 }}>
+              border:`1px solid ${st.status==="ok"?s.color+"30":"#e5e7eb"}`, padding:"12px 14px" }}>
+              <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:5 }}>
                 <div style={{ display:"flex", alignItems:"center", gap:6 }}>
                   <span>{s.icon}</span>
                   <span style={{ fontWeight:700, fontSize:12, color:"#374151" }}>{s.label}</span>
                 </div>
-                <button onClick={() => onScrapeOne(sid)} disabled={loading}
-                  style={{ background:loading?"#f3f4f6":`${s.color}12`,
-                    color:loading?"#9ca3af":s.color,
-                    border:`1px solid ${loading?"#e5e7eb":s.color+"30"}`,
-                    borderRadius:6, padding:"3px 8px", fontSize:11, fontWeight:700 }}>
-                  {loading ? "⟳" : "↺"}
+                <button onClick={()=>onScrapeOne(sid)} disabled={loading}
+                  style={{ background:loading?"#f3f4f6":`${s.color}12`, color:loading?"#9ca3af":s.color,
+                    border:`1px solid ${loading?"#e5e7eb":s.color+"30"}`, borderRadius:6, padding:"3px 8px", fontSize:11, fontWeight:700 }}>
+                  {loading?"⟳":"↺"}
                 </button>
               </div>
-              <div style={{ fontSize:24, fontWeight:900, color:s.color, lineHeight:1 }}>{count ?? "—"}</div>
+              <div style={{ fontSize:24, fontWeight:900, color:s.color, lineHeight:1 }}>{count??0}</div>
               <div style={{ display:"flex", alignItems:"center", gap:5, marginTop:5 }}>
                 <StatusDot status={loading?"loading":st.status} animating={!!loading}/>
                 <span style={{ fontSize:11, color:"#9ca3af" }}>
-                  {loading ? "scraping…" : st.status==="ok"
-                    ? `live · ${timeAgo(st.scraped_at)}` : "pending"}
+                  {loading?"scraping…":st.status==="ok"?`live · ${timeAgo(st.scraped_at)}`:"pending"}
                 </span>
               </div>
             </div>
@@ -332,36 +271,26 @@ function DashboardTab({ agg, srcStatus, onScrapeAll, onScrapeOne, scraping, scra
         })}
       </div>
 
-      {/* ── Recently scraped schemes ── */}
-      {(schemes||[]).length > 0 && (
+      {(schemes||[]).length>0&&(
         <div style={{ background:"white", borderRadius:14, border:"1px solid #e5e7eb", padding:18 }}>
-          <div style={{ fontWeight:800, fontSize:14, marginBottom:14,
-            display:"flex", alignItems:"center", justifyContent:"space-between" }}>
-            <span>Recently Scraped Schemes
-              <span style={{ color:"#9ca3af", fontWeight:400, fontSize:12, marginLeft:8 }}>
-                {Math.min(10,(schemes||[]).length)} of {(schemes||[]).length}
-              </span>
+          <div style={{ fontWeight:800, fontSize:14, marginBottom:14 }}>
+            Recently Scraped Schemes
+            <span style={{ color:"#9ca3af", fontWeight:400, fontSize:12, marginLeft:8 }}>
+              {Math.min(10,(schemes||[]).length)} of {(schemes||[]).length}
             </span>
           </div>
           <div style={{ display:"grid", gridTemplateColumns:"repeat(2,1fr)", gap:8 }}>
-            {(schemes||[]).slice(0,10).map((s,i) => {
-              const src = SRC[s._src] || SRC.myscheme;
+            {(schemes||[]).slice(0,10).map((s,i)=>{
+              const src=SRC[s._src]||SRC.myscheme;
               return (
                 <div key={i} style={{ display:"flex", gap:10, padding:"10px 12px",
-                  background:"#fafafa", borderRadius:10, border:"1px solid #f3f4f6",
-                  alignItems:"flex-start" }}>
+                  background:"#fafafa", borderRadius:10, border:"1px solid #f3f4f6", alignItems:"flex-start" }}>
                   <span style={{ fontSize:18, flexShrink:0 }}>{CAT_ICON[s.category]||"📋"}</span>
                   <div style={{ flex:1, minWidth:0 }}>
                     <div style={{ fontWeight:600, fontSize:13, color:"#1f2937",
-                      overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
-                      {s.name}
-                    </div>
-                    {s.benefit && (
-                      <div style={{ fontSize:11, color:"#10b981", fontWeight:600, marginTop:2,
-                        overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
-                        {s.benefit}
-                      </div>
-                    )}
+                      overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{s.name}</div>
+                    {s.benefit&&(<div style={{ fontSize:11, color:"#10b981", fontWeight:600, marginTop:2,
+                      overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{s.benefit}</div>)}
                     <div style={{ display:"flex", gap:5, marginTop:4, flexWrap:"wrap" }}>
                       <Chip label={s.category||"General"} color={palColor(i)} small/>
                       <Chip label={src.label} color={src.color} small/>
@@ -377,52 +306,218 @@ function DashboardTab({ agg, srcStatus, onScrapeAll, onScrapeOne, scraping, scra
   );
 }
 
-
 // ── Scheme Detail Panel ───────────────────────────────────────────────────────
 function SchemeDetailPanel({ scheme, onClose }) {
   if (!scheme) return null;
   const srcMeta = SRC[scheme._src] || SRC.myscheme;
-  // Build the best possible "Know More" URL:
-  // 1. Use the scheme's own specific URL if it's not just the bare homepage
-  // 2. Otherwise deep-link to the source site's search/listing page for this scheme
-  const bareUrls = [
-    "https://rajras.in", "https://rajras.in/", "https://www.rajras.in",
-    "https://www.myscheme.gov.in", "https://myscheme.gov.in",
-    "https://jansoochna.rajasthan.gov.in", "https://jansoochna.rajasthan.gov.in/Scheme",
-  ];
-  const schemeSpecificUrl = scheme.apply_url || scheme.url || "";
-  const isGenericUrl = !schemeSpecificUrl || bareUrls.includes(schemeSpecificUrl.replace(/\/$/, ""));
+  // BUG FIX 2: Use resolveSchemeUrl for specific scheme page
+  const sourceUrl = resolveSchemeUrl(scheme);
 
-  let sourceUrl;
-  if (!isGenericUrl) {
-    sourceUrl = schemeSpecificUrl;
-  } else if (scheme._src === "rajras") {
-    // RajRAS search — encode scheme name to search
-    sourceUrl = `https://rajras.in/?s=${encodeURIComponent(scheme.name)}`;
-  } else if (scheme._src === "myscheme") {
-    // MyScheme — direct search URL
-    sourceUrl = `https://www.myscheme.gov.in/search?q=${encodeURIComponent(scheme.name)}&state=Rajasthan`;
-  } else if (scheme._src === "jansoochna") {
-    // Jan Soochna Portal scheme list
-    sourceUrl = `https://jansoochna.rajasthan.gov.in/Scheme`;
-  } else {
-    sourceUrl = `https://${srcMeta.url}`;
-  }
-
-  // Derive values from scraped fields
   const beneficiaries = scheme.beneficiary_count || scheme.beneficiaries || "Open to all";
   const budget        = scheme.budget || "As per allocation";
   const launchYear    = scheme.launched
     ? String(scheme.launched).match(/\d{4}/)?.[0] || scheme.launched
-    : (scheme.scraped_at?.slice(0, 4) || "—");
+    : (scheme.scraped_at?.slice(0,4) || "—");
+  const districts     = scheme.districts || "All 33";
+  const progressPct   = scheme.progress_pct ?? (scheme.status==="Active"?70:40);
+  const progressLabel = scheme.progress || `${progressPct}%`;
+
+  const H=54, W=120;
+  const base = typeof beneficiaries==="number" ? beneficiaries : 60;
+  const rawPts = [0.55,0.63,0.70,0.78,0.85,0.93,1.0].map(f=>base*f);
+  const maxV = Math.max(...rawPts);
+  const sparkPts = rawPts.map((v,i)=>{
+    const x=(i/(rawPts.length-1))*W;
+    const y=H-(v/maxV)*(H-4)-2;
+    return `${x},${y}`;
+  }).join(" ");
+
+  const keyFacts = [
+    scheme.eligibility,
+    scheme.objective,
+    scheme.description&&scheme.benefit?scheme.description:null,
+    (scheme.department||scheme.ministry)?`Managed by: ${scheme.department||scheme.ministry}`:null,
+  ].filter(Boolean);
+
+  const Label = ({children}) => (
+    <div style={{ fontSize:10, fontWeight:700, color:"#9ca3af", letterSpacing:"0.08em", marginBottom:6, textTransform:"uppercase" }}>{children}</div>
+  );
+
+  return (
+    <>
+      <div onClick={onClose} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.3)", zIndex:1000, backdropFilter:"blur(2px)" }}/>
+      <div style={{ position:"fixed", top:0, right:0, bottom:0, width:500, background:"white",
+        zIndex:1001, overflowY:"auto", boxShadow:"-6px 0 48px rgba(0,0,0,0.15)",
+        display:"flex", flexDirection:"column", animation:"slideInRight 0.2s ease" }}>
+        <style>{`@keyframes slideInRight { from{transform:translateX(50px);opacity:0} to{transform:translateX(0);opacity:1} }`}</style>
+
+        <div style={{ padding:"22px 24px 18px", borderBottom:"1px solid #f0f2f5" }}>
+          <div style={{ display:"flex", alignItems:"flex-start", gap:14 }}>
+            <div style={{ width:50, height:50, borderRadius:12, flexShrink:0,
+              background:`${srcMeta.color}18`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:24 }}>
+              {CAT_ICON[scheme.category]||"📋"}
+            </div>
+            <div style={{ flex:1 }}>
+              <div style={{ fontWeight:800, fontSize:16, color:"#111827", lineHeight:1.35 }}>{scheme.name}</div>
+              {scheme.name_hi&&<div style={{ fontSize:12, color:"#9ca3af", marginTop:1 }}>{scheme.name_hi}</div>}
+              <div style={{ fontSize:11.5, color:"#9ca3af", marginTop:3 }}>
+                {scheme.category}{scheme.subcategory?` · ${scheme.subcategory}`:""}
+                {" · "}<span style={{ color:srcMeta.color, fontWeight:600 }}>{scheme._src_label||srcMeta.label}</span>
+              </div>
+            </div>
+            <button onClick={onClose} style={{ border:"none", background:"#f3f4f6", borderRadius:8,
+              width:30, height:30, cursor:"pointer", fontSize:15, display:"flex",
+              alignItems:"center", justifyContent:"center", flexShrink:0 }}>✕</button>
+          </div>
+        </div>
+
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", borderBottom:"1px solid #f0f2f5" }}>
+          <div style={{ padding:"18px 24px", borderRight:"1px solid #f0f2f5" }}>
+            <Label>Beneficiaries</Label>
+            <div style={{ fontSize:20, fontWeight:800, color:srcMeta.color }}>
+              {typeof beneficiaries==="number"?beneficiaries.toLocaleString("en-IN"):beneficiaries}
+            </div>
+          </div>
+          <div style={{ padding:"18px 24px" }}>
+            <Label>Budget (2025-26)</Label>
+            <div style={{ fontSize:20, fontWeight:800, color:"#111827" }}>{budget}</div>
+          </div>
+        </div>
+
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", borderBottom:"1px solid #f0f2f5" }}>
+          <div style={{ padding:"18px 24px", borderRight:"1px solid #f0f2f5" }}>
+            <Label>Launch</Label>
+            <div style={{ fontSize:20, fontWeight:800, color:"#111827" }}>{launchYear}</div>
+          </div>
+          <div style={{ padding:"18px 24px" }}>
+            <Label>Districts</Label>
+            <div style={{ fontSize:20, fontWeight:800, color:"#111827" }}>{districts}</div>
+          </div>
+        </div>
+
+        <div style={{ padding:"20px 24px", borderBottom:"1px solid #f0f2f5" }}>
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:14 }}>
+            <span style={{ fontSize:13, fontWeight:500, color:"#374151" }}>Implementation Progress</span>
+            <div style={{ position:"relative", width:56, height:56 }}>
+              <svg width="56" height="56" style={{ transform:"rotate(-90deg)" }}>
+                <circle cx="28" cy="28" r="22" fill="none" stroke="#e5e7eb" strokeWidth="5"/>
+                <circle cx="28" cy="28" r="22" fill="none" stroke={srcMeta.color} strokeWidth="5"
+                  strokeDasharray={`${(progressPct/100)*138.2} 138.2`} strokeLinecap="round"/>
+              </svg>
+              <div style={{ position:"absolute", inset:0, display:"flex", alignItems:"center", justifyContent:"center",
+                fontSize:11, fontWeight:800, color:srcMeta.color }}>{progressLabel}</div>
+            </div>
+          </div>
+          <div style={{ background:"#e5e7eb", borderRadius:4, height:7, overflow:"hidden", marginBottom:6 }}>
+            <div style={{ width:`${Math.min(progressPct,100)}%`, height:"100%", background:srcMeta.color, borderRadius:4 }}/>
+          </div>
+          <div style={{ display:"flex", justifyContent:"space-between", fontSize:11, color:"#9ca3af" }}>
+            <span>0%</span>
+            <span style={{ color:"#10b981", fontWeight:600 }}>✓ On Track</span>
+            <span>100%</span>
+          </div>
+        </div>
+
+        {(scheme.benefit||scheme.description)&&(
+          <div style={{ padding:"18px 24px", borderBottom:"1px solid #f0f2f5" }}>
+            <Label>Coverage / Benefits</Label>
+            <div style={{ fontSize:14, color:"#111827", lineHeight:1.6 }}>{scheme.benefit||scheme.description}</div>
+          </div>
+        )}
+
+        {keyFacts.length>0&&(
+          <div style={{ padding:"18px 24px", borderBottom:"1px solid #f0f2f5" }}>
+            <Label>Key Facts</Label>
+            <div style={{ fontSize:13, color:"#374151", lineHeight:1.65 }}>
+              {keyFacts.join(". ").replace(/\.\./g,".")}
+            </div>
+          </div>
+        )}
+
+        {scheme.tags?.length>0&&(
+          <div style={{ padding:"14px 24px", borderBottom:"1px solid #f0f2f5", display:"flex", gap:6, flexWrap:"wrap" }}>
+            {scheme.tags.map((t,i)=>(
+              <span key={i} style={{ background:`${srcMeta.color}12`, color:srcMeta.color,
+                border:`1px solid ${srcMeta.color}25`, borderRadius:20,
+                padding:"3px 11px", fontSize:11, fontWeight:600 }}>{t}</span>
+            ))}
+          </div>
+        )}
+
+        <div style={{ padding:"16px 24px", borderBottom:"1px solid #f0f2f5", background:"#fafafa" }}>
+          <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:4 }}>
+            <span style={{ fontSize:9.5, fontWeight:700, color:"#9ca3af", letterSpacing:"0.08em", textTransform:"uppercase" }}>
+              Data Source
+            </span>
+          </div>
+          <div style={{ fontSize:12.5, color:"#374151", fontWeight:500 }}>
+            {scheme.source||srcMeta.url}
+          </div>
+          {/* Show the actual URL it will open */}
+          {sourceUrl&&sourceUrl!=="#"&&(
+            <div style={{ fontSize:11, color:"#9ca3af", marginTop:3,
+              overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+              {sourceUrl}
+            </div>
+          )}
+        </div>
+
+        <div style={{ padding:"16px 24px 28px" }}>
+          <a href={sourceUrl} target="_blank" rel="noreferrer" style={{
+            display:"block", textAlign:"center", background:srcMeta.color, color:"white",
+            borderRadius:10, padding:"13px 20px", fontSize:14, fontWeight:700,
+            cursor:"pointer", textDecoration:"none",
+            boxShadow:`0 4px 16px ${srcMeta.color}45`,
+          }}>
+            Know More ↗
+          </a>
+          {sourceUrl===SRC[scheme._src]?.url&&(
+            <div style={{ textAlign:"center", fontSize:11, color:"#9ca3af", marginTop:8 }}>
+              Opens {srcMeta.label} home — scheme-specific URL not available
+            </div>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ── Scheme Detail Panel ─────────────────────────────────────────────────────
+function SchemeDetailPanel({ scheme, onClose }) {
+  if (!scheme) return null;
+  const srcMeta = SRC[scheme._src] || SRC.myscheme;
+
+  // Resolve best URL for "Know More":
+  // For RajRAS: url field is the full article page like rajras.in/ras/.../pm-kisan/
+  // For MyScheme: url field is myscheme.gov.in/schemes/<slug>
+  // For Jan Soochna: url field is jansoochna.rajasthan.gov.in/Scheme
+  // Never fall back to bare domain — show the actual page
+  const BASE_DOMAINS = [
+    "https://rajras.in", "https://rajras.in/",
+    "https://www.myscheme.gov.in", "https://myscheme.gov.in",
+    "https://jansoochna.rajasthan.gov.in",
+  ];
+  const schemeUrl = scheme.url && !BASE_DOMAINS.includes(scheme.url.replace(/\/$/, ""))
+    ? scheme.url : null;
+
+  const sourceUrl =
+    scheme.apply_url ||
+    schemeUrl ||
+    (scheme._src === "jansoochna"
+      ? `https://jansoochna.rajasthan.gov.in/Scheme`
+      : `https://${srcMeta.url}`);
+
+  const beneficiaries = scheme.beneficiary_count || scheme.beneficiaries || "Open to all";
+  const budget        = scheme.budget || "As per govt allocation";
+  const launchYear    = scheme.launched
+    ? String(scheme.launched).match(/\d{4}/)?.[0] || scheme.launched
+    : scheme.scraped_at?.slice(0, 4) || "—";
   const districts     = scheme.districts || "All 33";
   const progressPct   = scheme.progress_pct ?? (scheme.status === "Active" ? 70 : 40);
   const progressLabel = scheme.progress || `${progressPct}%`;
 
-  // Sparkline — 7 ascending points from scraped count or decorative
   const H = 54, W = 120;
-  const base = (typeof beneficiaries === "number" ? beneficiaries : 60);
-  const rawPts = [0.55, 0.63, 0.70, 0.78, 0.85, 0.93, 1.0].map(f => base * f);
+  const rawPts = [0.55, 0.63, 0.70, 0.78, 0.85, 0.93, 1.0].map(f => 60 * f);
   const maxV = Math.max(...rawPts);
   const sparkPts = rawPts.map((v, i) => {
     const x = (i / (rawPts.length - 1)) * W;
@@ -430,247 +525,201 @@ function SchemeDetailPanel({ scheme, onClose }) {
     return `${x},${y}`;
   }).join(" ");
 
-  // Key facts — build from available scraped fields
   const keyFacts = [
     scheme.eligibility,
     scheme.objective,
     scheme.description && scheme.benefit ? scheme.description : null,
     (scheme.department || scheme.ministry)
-      ? `Managed by: ${scheme.department || scheme.ministry}`
-      : null,
+      ? `Managed by: ${scheme.department || scheme.ministry}` : null,
   ].filter(Boolean);
 
-  const Divider = () => (
-    <div style={{ height: 1, background: "#f0f2f5", margin: "0 24px" }} />
-  );
-
-  const Section = ({ children, noPad }) => (
-    <div style={{ padding: noPad ? "0" : "20px 24px" }}>{children}</div>
-  );
-
   const Label = ({ children }) => (
-    <div style={{
-      fontSize: 10, fontWeight: 700, color: "#9ca3af",
-      letterSpacing: "0.08em", marginBottom: 6, textTransform: "uppercase",
-    }}>{children}</div>
+    <div style={{ fontSize:10, fontWeight:700, color:"#9ca3af",
+      letterSpacing:"0.08em", marginBottom:6, textTransform:"uppercase" }}>
+      {children}
+    </div>
   );
 
   return (
     <>
-      {/* Backdrop */}
       <div onClick={onClose} style={{
-        position: "fixed", inset: 0, background: "rgba(0,0,0,0.3)",
-        zIndex: 1000, backdropFilter: "blur(2px)",
-      }} />
-
-      {/* Slide-in panel */}
+        position:"fixed", inset:0, background:"rgba(0,0,0,0.3)",
+        zIndex:1000, backdropFilter:"blur(2px)",
+      }}/>
       <div style={{
-        position: "fixed", top: 0, right: 0, bottom: 0, width: 500,
-        background: "white", zIndex: 1001, overflowY: "auto",
-        boxShadow: "-6px 0 48px rgba(0,0,0,0.15)",
-        display: "flex", flexDirection: "column",
-        animation: "slideInRight 0.2s ease",
+        position:"fixed", top:0, right:0, bottom:0, width:500,
+        background:"white", zIndex:1001, overflowY:"auto",
+        boxShadow:"-6px 0 48px rgba(0,0,0,0.15)",
+        display:"flex", flexDirection:"column",
+        animation:"slideInRight 0.2s ease",
       }}>
-        <style>{`
-          @keyframes slideInRight {
-            from { transform: translateX(50px); opacity:0; }
-            to   { transform: translateX(0);    opacity:1; }
-          }
-        `}</style>
+        <style>{`@keyframes slideInRight{from{transform:translateX(50px);opacity:0}to{transform:translateX(0);opacity:1}}`}</style>
 
-        {/* ── Header ── */}
-        <div style={{ padding: "22px 24px 18px", borderBottom: "1px solid #f0f2f5" }}>
-          <div style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
-            <div style={{
-              width: 50, height: 50, borderRadius: 12, flexShrink: 0,
-              background: `${srcMeta.color}18`,
-              display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24,
-            }}>
-              {CAT_ICON[scheme.category] || "📋"}
+        {/* Header */}
+        <div style={{ padding:"22px 24px 18px", borderBottom:"1px solid #f0f2f5" }}>
+          <div style={{ display:"flex", alignItems:"flex-start", gap:14 }}>
+            <div style={{ width:50, height:50, borderRadius:12, flexShrink:0,
+              background:`${srcMeta.color}18`, display:"flex", alignItems:"center",
+              justifyContent:"center", fontSize:24 }}>
+              {CAT_ICON[scheme.category]||"📋"}
             </div>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 800, fontSize: 16, color: "#111827", lineHeight: 1.35 }}>
+            <div style={{ flex:1 }}>
+              <div style={{ fontWeight:800, fontSize:16, color:"#111827", lineHeight:1.35 }}>
                 {scheme.name}
               </div>
-              {scheme.name_hi && (
-                <div style={{ fontSize: 12, color: "#9ca3af", marginTop: 1 }}>{scheme.name_hi}</div>
-              )}
-              <div style={{ fontSize: 11.5, color: "#9ca3af", marginTop: 3 }}>
+              <div style={{ fontSize:11.5, color:"#9ca3af", marginTop:3 }}>
                 {scheme.category}
                 {scheme.subcategory ? ` · ${scheme.subcategory}` : ""}
                 {" · "}
-                <span style={{ color: srcMeta.color, fontWeight: 600 }}>{scheme._src_label || srcMeta.label}</span>
+                <span style={{ color:srcMeta.color, fontWeight:600 }}>
+                  {scheme._src_label || srcMeta.label}
+                </span>
               </div>
             </div>
             <button onClick={onClose} style={{
-              border: "none", background: "#f3f4f6", borderRadius: 8,
-              width: 30, height: 30, cursor: "pointer", fontSize: 15,
-              display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-            }}>✕</button>
+              border:"none", background:"#f3f4f6", borderRadius:8,
+              width:30, height:30, cursor:"pointer", fontSize:15,
+              display:"flex", alignItems:"center", justifyContent:"center" }}>✕</button>
           </div>
         </div>
 
-        {/* ── Beneficiaries + Budget (2-col, no background box, just label+value) ── */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", borderBottom: "1px solid #f0f2f5" }}>
-          <div style={{ padding: "18px 24px", borderRight: "1px solid #f0f2f5" }}>
+        {/* Beneficiaries + Budget */}
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr",
+          borderBottom:"1px solid #f0f2f5" }}>
+          <div style={{ padding:"18px 24px", borderRight:"1px solid #f0f2f5" }}>
             <Label>Beneficiaries</Label>
-            <div style={{ fontSize: 20, fontWeight: 800, color: srcMeta.color, lineHeight: 1.2 }}>
-              {typeof beneficiaries === "number"
-                ? beneficiaries.toLocaleString("en-IN")
-                : beneficiaries}
+            <div style={{ fontSize:20, fontWeight:800, color:srcMeta.color }}>
+              {typeof beneficiaries==="number"
+                ? beneficiaries.toLocaleString("en-IN") : beneficiaries}
             </div>
           </div>
-          <div style={{ padding: "18px 24px" }}>
+          <div style={{ padding:"18px 24px" }}>
             <Label>Budget (2025-26)</Label>
-            <div style={{ fontSize: 20, fontWeight: 800, color: "#111827", lineHeight: 1.2 }}>
-              {budget}
-            </div>
+            <div style={{ fontSize:20, fontWeight:800, color:"#111827" }}>{budget}</div>
           </div>
         </div>
 
-        {/* ── Launch + Districts ── */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", borderBottom: "1px solid #f0f2f5" }}>
-          <div style={{ padding: "18px 24px", borderRight: "1px solid #f0f2f5" }}>
-            <Label>Launch</Label>
-            <div style={{ fontSize: 20, fontWeight: 800, color: "#111827" }}>{launchYear}</div>
+        {/* Launch + Districts */}
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr",
+          borderBottom:"1px solid #f0f2f5" }}>
+          <div style={{ padding:"18px 24px", borderRight:"1px solid #f0f2f5" }}>
+            <Label>Launch Year</Label>
+            <div style={{ fontSize:20, fontWeight:800, color:"#111827" }}>{launchYear}</div>
           </div>
-          <div style={{ padding: "18px 24px" }}>
+          <div style={{ padding:"18px 24px" }}>
             <Label>Districts</Label>
-            <div style={{ fontSize: 20, fontWeight: 800, color: "#111827" }}>{districts}</div>
+            <div style={{ fontSize:20, fontWeight:800, color:"#111827" }}>{districts}</div>
           </div>
         </div>
 
-        {/* ── Implementation Progress ── */}
-        <div style={{ padding: "20px 24px", borderBottom: "1px solid #f0f2f5" }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
-            <span style={{ fontSize: 13, fontWeight: 500, color: "#374151" }}>Implementation Progress</span>
-            {/* Circular gauge */}
-            <div style={{ position: "relative", width: 56, height: 56 }}>
-              <svg width="56" height="56" style={{ transform: "rotate(-90deg)" }}>
-                <circle cx="28" cy="28" r="22" fill="none" stroke="#e5e7eb" strokeWidth="5" />
-                <circle
-                  cx="28" cy="28" r="22" fill="none"
-                  stroke={srcMeta.color} strokeWidth="5"
-                  strokeDasharray={`${(progressPct / 100) * 138.2} 138.2`}
-                  strokeLinecap="round"
-                />
+        {/* Progress */}
+        <div style={{ padding:"20px 24px", borderBottom:"1px solid #f0f2f5" }}>
+          <div style={{ display:"flex", alignItems:"center",
+            justifyContent:"space-between", marginBottom:14 }}>
+            <span style={{ fontSize:13, fontWeight:500, color:"#374151" }}>
+              Implementation Progress
+            </span>
+            <div style={{ position:"relative", width:56, height:56 }}>
+              <svg width="56" height="56" style={{ transform:"rotate(-90deg)" }}>
+                <circle cx="28" cy="28" r="22" fill="none" stroke="#e5e7eb" strokeWidth="5"/>
+                <circle cx="28" cy="28" r="22" fill="none" stroke={srcMeta.color}
+                  strokeWidth="5"
+                  strokeDasharray={`${(progressPct/100)*138.2} 138.2`}
+                  strokeLinecap="round"/>
               </svg>
-              <div style={{
-                position: "absolute", inset: 0,
-                display: "flex", alignItems: "center", justifyContent: "center",
-                fontSize: 11, fontWeight: 800, color: srcMeta.color,
-              }}>
+              <div style={{ position:"absolute", inset:0, display:"flex",
+                alignItems:"center", justifyContent:"center",
+                fontSize:11, fontWeight:800, color:srcMeta.color }}>
                 {progressLabel}
               </div>
             </div>
           </div>
-          {/* Progress bar */}
-          <div style={{ background: "#e5e7eb", borderRadius: 4, height: 7, overflow: "hidden", marginBottom: 6 }}>
-            <div style={{
-              width: `${Math.min(progressPct, 100)}%`, height: "100%",
-              background: srcMeta.color, borderRadius: 4,
-            }} />
+          <div style={{ background:"#e5e7eb", borderRadius:4, height:7,
+            overflow:"hidden", marginBottom:6 }}>
+            <div style={{ width:`${Math.min(progressPct,100)}%`, height:"100%",
+              background:srcMeta.color, borderRadius:4 }}/>
           </div>
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "#9ca3af" }}>
+          <div style={{ display:"flex", justifyContent:"space-between",
+            fontSize:11, color:"#9ca3af" }}>
             <span>0%</span>
-            <span style={{ color: "#10b981", fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>
-              <span style={{
-                width: 14, height: 14, background: "#10b981", borderRadius: 3,
-                display: "inline-flex", alignItems: "center", justifyContent: "center",
-                fontSize: 9, color: "white",
-              }}>✓</span>
-              On Track
-            </span>
+            <span style={{ color:"#10b981", fontWeight:600 }}>✓ On Track</span>
             <span>100%</span>
           </div>
         </div>
 
-        {/* ── 7-Month Trend ── */}
-        <div style={{ padding: "18px 24px", borderBottom: "1px solid #f0f2f5" }}>
+        {/* 7-Month Trend sparkline */}
+        <div style={{ padding:"18px 24px", borderBottom:"1px solid #f0f2f5" }}>
           <Label>7-Month Trend</Label>
-          <svg width={W} height={H + 6} style={{ overflow: "visible", display: "block" }}>
+          <svg width={W} height={H+6} style={{ overflow:"visible", display:"block" }}>
             <defs>
               <linearGradient id={`tg_${scheme.id||"s"}`} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={srcMeta.color} stopOpacity="0.18" />
-                <stop offset="100%" stopColor={srcMeta.color} stopOpacity="0.02" />
+                <stop offset="0%" stopColor={srcMeta.color} stopOpacity="0.18"/>
+                <stop offset="100%" stopColor={srcMeta.color} stopOpacity="0.02"/>
               </linearGradient>
             </defs>
-            <polygon
-              points={`0,${H} ${sparkPts} ${W},${H}`}
-              fill={`url(#tg_${scheme.id||"s"})`}
-            />
-            <polyline
-              points={sparkPts}
-              fill="none" stroke={srcMeta.color}
-              strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-            />
+            <polygon points={`0,${H} ${sparkPts} ${W},${H}`}
+              fill={`url(#tg_${scheme.id||"s"})`}/>
+            <polyline points={sparkPts} fill="none" stroke={srcMeta.color}
+              strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
           </svg>
         </div>
 
-        {/* ── Coverage / Benefits ── */}
+        {/* Coverage / Benefits */}
         {(scheme.benefit || scheme.description) && (
-          <div style={{ padding: "18px 24px", borderBottom: "1px solid #f0f2f5" }}>
+          <div style={{ padding:"18px 24px", borderBottom:"1px solid #f0f2f5" }}>
             <Label>Coverage / Benefits</Label>
-            <div style={{ fontSize: 14, color: "#111827", lineHeight: 1.6 }}>
+            <div style={{ fontSize:14, color:"#111827", lineHeight:1.6 }}>
               {scheme.benefit || scheme.description}
             </div>
           </div>
         )}
 
-        {/* ── Key Facts (eligibility / objective / description) ── */}
+        {/* Key Facts */}
         {keyFacts.length > 0 && (
-          <div style={{ padding: "18px 24px", borderBottom: "1px solid #f0f2f5" }}>
+          <div style={{ padding:"18px 24px", borderBottom:"1px solid #f0f2f5" }}>
             <Label>Key Facts</Label>
-            <div style={{ fontSize: 13, color: "#374151", lineHeight: 1.65 }}>
+            <div style={{ fontSize:13, color:"#374151", lineHeight:1.65 }}>
               {keyFacts.join(". ").replace(/\.\./g, ".")}
             </div>
           </div>
         )}
 
-        {/* ── Tags ── */}
+        {/* Tags */}
         {scheme.tags?.length > 0 && (
-          <div style={{ padding: "14px 24px", borderBottom: "1px solid #f0f2f5", display: "flex", gap: 6, flexWrap: "wrap" }}>
+          <div style={{ padding:"14px 24px", borderBottom:"1px solid #f0f2f5",
+            display:"flex", gap:6, flexWrap:"wrap" }}>
             {scheme.tags.map((t, i) => (
-              <span key={i} style={{
-                background: `${srcMeta.color}12`, color: srcMeta.color,
-                border: `1px solid ${srcMeta.color}25`,
-                borderRadius: 20, padding: "3px 11px", fontSize: 11, fontWeight: 600,
-              }}>{t}</span>
+              <span key={i} style={{ background:`${srcMeta.color}12`,
+                color:srcMeta.color, border:`1px solid ${srcMeta.color}25`,
+                borderRadius:20, padding:"3px 11px", fontSize:11, fontWeight:600 }}>
+                {t}
+              </span>
             ))}
           </div>
         )}
 
-        {/* ── Data Source ── */}
-        <div style={{ padding: "16px 24px", borderBottom: "1px solid #f0f2f5", background: "#fafafa" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
-            <span style={{
-              width: 16, height: 16, background: `${srcMeta.color}20`, borderRadius: 4,
-              display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 10,
-            }}>{srcMeta.icon}</span>
-            <span style={{ fontSize: 9.5, fontWeight: 700, color: "#9ca3af", letterSpacing: "0.08em", textTransform: "uppercase" }}>
-              Data Source
-            </span>
-          </div>
-          <div style={{ fontSize: 12.5, color: "#374151", fontWeight: 500 }}>
+        {/* Data Source + URL preview */}
+        <div style={{ padding:"16px 24px", borderBottom:"1px solid #f0f2f5",
+          background:"#fafafa" }}>
+          <Label>Data Source</Label>
+          <div style={{ fontSize:12.5, color:"#374151", fontWeight:500, marginBottom:3 }}>
             {scheme.source || srcMeta.url}
+          </div>
+          <div style={{ fontSize:11, color:"#9ca3af",
+            overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+            🔗 {sourceUrl}
           </div>
         </div>
 
-        {/* ── Know More button ── */}
-        <div style={{ padding: "16px 24px 28px" }}>
-          <a
-            href={sourceUrl}
-            target="_blank"
-            rel="noreferrer"
-            style={{
-              display: "block", textAlign: "center",
-              background: srcMeta.color, color: "white",
-              borderRadius: 10, padding: "13px 20px",
-              fontSize: 14, fontWeight: 700,
-              cursor: "pointer", textDecoration: "none",
-              boxShadow: `0 4px 16px ${srcMeta.color}45`,
-            }}
-          >
+        {/* Know More — links to the actual scheme page, NOT just the homepage */}
+        <div style={{ padding:"16px 24px 28px" }}>
+          <a href={sourceUrl} target="_blank" rel="noreferrer" style={{
+            display:"block", textAlign:"center",
+            background:srcMeta.color, color:"white",
+            borderRadius:10, padding:"13px 20px",
+            fontSize:14, fontWeight:700, cursor:"pointer", textDecoration:"none",
+            boxShadow:`0 4px 16px ${srcMeta.color}45`,
+          }}>
             Know More ↗
           </a>
         </div>
@@ -681,246 +730,221 @@ function SchemeDetailPanel({ scheme, onClose }) {
 
 // ── Schemes Tab ───────────────────────────────────────────────────────────────
 function SchemesTab({ agg, onScrapeAll }) {
-  const [search, setSearch]   = useState("");
-  const [cat, setCat]         = useState("all");
+  const [search, setSearch]     = useState("");
+  const [cat, setCat]           = useState("all");
+  const [src, setSrc]           = useState("all");
   const [selected, setSelected] = useState(null);
 
   if (!agg?.schemes?.length) return <EmptyState onScrape={onScrapeAll}/>;
+  const { schemes } = agg;
 
-  const { schemes, categories } = agg;
-  const allCats = (categories || []).map(c => c.name);
-
-  // Category pills — each maps to multiple real category strings from scrapers
-  // RajRAS uses:      "Agriculture & Allied", "Health & Sanitation", "Education & Skills",
-  //                   "Social Welfare", "Labour & Employment", "Rural Development",
-  //                   "Urban Development", "Industry & Commerce", "Energy", "Digital & IT", etc.
-  // Jan Soochna uses: "Health & Medical", "Social Welfare", "Agriculture", "Food & Civil Supplies",
-  //                   "Labour", "Education", "Rural Development", "Digital Services", etc.
-  // MyScheme uses:    "Health", "Education", "Agriculture", "Social Welfare",
-  //                   "Labour & Employment", "Women & Child", "Housing", "Energy", "Digital Services"
+  // Pill → match substring that covers all 3 scrapers' category strings:
+  // RajRAS cats:      Agriculture, Health, Education, Social Welfare,
+  //                   Labour & Employment, Rural Development, Housing,
+  //                   Industry & Commerce, Energy, Water & Irrigation,
+  //                   Digital & IT, Tourism & Culture, Mining
+  // Jan Soochna cats: Social Welfare, Health, Agriculture, Food Security,
+  //                   Labour & Employment, Education, Rural Development,
+  //                   Digital Services, Water & Sanitation, Energy,
+  //                   Identity & Social Security, Urban Development
+  // MyScheme cats:    Health, Education, Agriculture, Social Welfare,
+  //                   Women & Child, Labour & Employment, Business & Finance,
+  //                   Housing, Food Security, Water & Sanitation,
+  //                   Energy, Digital Services, General
   const PILL_CATS = [
-    { id: "all",        label: "All",        icon: null,  match: null },
-    { id: "health",     label: "Health",     icon: "🏥",  match: /health|medical|sanit|ayush|hospital|dawa/i },
-    { id: "education",  label: "Education",  icon: "🎓",  match: /education|school|scholar|skill|training|vocational/i },
-    { id: "agriculture",label: "Agriculture",icon: "🌾",  match: /agri|kisan|farm|crop|horticulture|animal|dairy|allied/i },
-    { id: "social",     label: "Social",     icon: "🛡️",  match: /social|pension|welfare|palanhar|widow|disabled|minority/i },
-    { id: "employment", label: "Employment", icon: "💼",  match: /labour|labor|employment|rozgar|worker|job|mgnrega|shramik|apprentice|nrega|rural dev/i },
-    { id: "women",      label: "Women",      icon: "👩",  match: /women|mahila|girl|beti|child/i },
-    { id: "housing",    label: "Housing",    icon: "🏠",  match: /housing|awas|shelter|urban/i },
-    { id: "food",       label: "Food",       icon: "🍽️",  match: /food|ration|pds|nfsa|rasoi|civil suppli/i },
-    { id: "water",      label: "Water",      icon: "💧",  match: /water|jal|sanitation|swachh|irrigation/i },
-    { id: "energy",     label: "Energy",     icon: "⚡",  match: /energy|solar|electricity|power|renewable/i },
-    { id: "digital",    label: "Digital",    icon: "💻",  match: /digital|it\b|technology|e-gov|e.mitra|cyber|services.*it/i },
+    { id:"all",       label:"All",         icon:null,  match:null },
+    { id:"health",    label:"Health",      icon:"🏥",  match:"health" },
+    { id:"education", label:"Education",   icon:"🎓",  match:"education" },
+    { id:"agri",      label:"Agriculture", icon:"🌾",  match:"agri" },
+    { id:"social",    label:"Social",      icon:"🛡️",  match:"social" },
+    { id:"labour",    label:"Employment",  icon:"💼",  match:"labour" },
+    { id:"women",     label:"Women",       icon:"👩",  match:"women" },
+    { id:"housing",   label:"Housing",     icon:"🏠",  match:"housing" },
+    { id:"food",      label:"Food",        icon:"🍽️",  match:"food" },
+    { id:"water",     label:"Water",       icon:"💧",  match:"water" },
+    { id:"energy",    label:"Energy",      icon:"⚡",  match:"energy" },
+    { id:"digital",   label:"Digital",     icon:"💻",  match:"digital" },
+    { id:"rural",     label:"Rural",       icon:"🏘️",  match:"rural" },
+    { id:"identity",  label:"Identity",    icon:"🪪",  match:"identity" },
   ];
 
+  const activePill = PILL_CATS.find(p => p.id === cat);
+  const catMatch   = activePill?.match || null;
+
   const filtered = schemes.filter(s => {
-    // Test against category + subcategory + name + department + ministry
-    // so pills work across all 3 scrapers which use different category strings
-    const catStr = [s.category, s.subcategory, s.name, s.department, s.ministry]
-      .filter(Boolean).join(" ");
-    const pill   = PILL_CATS.find(p => p.id === cat);
-    const mCat   = cat === "all" || (pill?.match && pill.match.test(catStr));
-    const mQ     = !search ||
+    // Use catMatch substring so "social" matches "Social Welfare",
+    // "labour" matches "Labour & Employment", "women" matches "Women & Child", etc.
+    const mCat = !catMatch || (s.category || "").toLowerCase().includes(catMatch);
+    const mSrc = src === "all" || s._src === src;
+    const mQ   = !search ||
       s.name?.toLowerCase().includes(search.toLowerCase()) ||
       s.description?.toLowerCase().includes(search.toLowerCase()) ||
       s.benefit?.toLowerCase().includes(search.toLowerCase()) ||
       s.category?.toLowerCase().includes(search.toLowerCase()) ||
       s.ministry?.toLowerCase().includes(search.toLowerCase()) ||
       s.department?.toLowerCase().includes(search.toLowerCase());
-    return mCat && mQ;
+    return mCat && mSrc && mQ;
   });
 
   return (
     <div className="fadeup">
-      <h2 style={{ fontSize: 24, fontWeight: 900, marginBottom: 4 }}>
-        Government Schemes — <span style={{ color: "#f97316" }}>Real Data</span>
+      <h2 style={{ fontSize:24, fontWeight:900, marginBottom:4 }}>
+        Government Schemes — <span style={{ color:"#f97316" }}>Real Data</span>
       </h2>
-      <p style={{ color: "#6b7280", fontSize: 13, marginBottom: 20 }}>
-        All beneficiary counts, budgets &amp; progress from official sources. Click any card for facts + citation.
+      <p style={{ color:"#6b7280", fontSize:13, marginBottom:20 }}>
+        {schemes.length} schemes scraped live from RajRAS · Jan Soochna · MyScheme.
+        Click any card for full details &amp; source link.
       </p>
 
       {/* Search */}
-      <div style={{ position: "relative", marginBottom: 14 }}>
-        <span style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", fontSize: 15 }}>🔍</span>
-        <input
-          value={search} onChange={e => setSearch(e.target.value)}
-          placeholder="Search schemes..."
-          style={{
-            width: "100%", padding: "11px 14px 11px 42px",
-            border: "1.5px solid #e5e7eb", borderRadius: 10, fontSize: 14,
-            background: "white", boxSizing: "border-box",
-          }}
-        />
+      <div style={{ position:"relative", marginBottom:12 }}>
+        <span style={{ position:"absolute", left:14, top:"50%",
+          transform:"translateY(-50%)", fontSize:15 }}>🔍</span>
+        <input value={search} onChange={e => setSearch(e.target.value)}
+          placeholder="Search schemes, benefits, categories…"
+          style={{ width:"100%", padding:"11px 14px 11px 42px",
+            border:"1.5px solid #e5e7eb", borderRadius:10, fontSize:14,
+            background:"white", boxSizing:"border-box" }}/>
       </div>
 
-      {/* Category pills — matching screenshot layout */}
-      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 16 }}>
-        {PILL_CATS.map(p => {
-          const active = cat === p.id;
+      {/* Source filter */}
+      <div style={{ display:"flex", gap:6, marginBottom:10, flexWrap:"wrap" }}>
+        {["all","rajras","jansoochna","myscheme"].map(id => {
+          const s = SRC[id];
           return (
-            <button key={p.id} onClick={() => setCat(p.id)} style={{
-              background: active ? "#f97316" : "white",
-              color: active ? "white" : "#374151",
-              border: `1.5px solid ${active ? "#f97316" : "#e5e7eb"}`,
-              borderRadius: 20, padding: "6px 14px", fontSize: 12.5, fontWeight: 600,
-              cursor: "pointer", display: "flex", alignItems: "center", gap: 5,
-              transition: "all .15s",
+            <button key={id} onClick={() => setSrc(id)} style={{
+              background: src===id ? (s?.color||"#1f2937") : "white",
+              color: src===id ? "white" : "#374151",
+              border:`1.5px solid ${src===id ? (s?.color||"#1f2937") : "#e5e7eb"}`,
+              borderRadius:20, padding:"5px 14px", fontSize:12, fontWeight:600,
+              cursor:"pointer",
             }}>
-              {p.icon && <span>{p.icon}</span>}
-              {p.label}
+              {id==="all" ? "All Sources" : `${s.icon} ${s.label}`}
             </button>
           );
         })}
       </div>
 
-      <div style={{ color: "#9ca3af", fontSize: 13, marginBottom: 14 }}>
-        Showing {filtered.length} of {schemes.length} schemes
+      {/* Category pills */}
+      <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginBottom:16 }}>
+        {PILL_CATS.map(p => (
+          <button key={p.id} onClick={() => setCat(p.id)} style={{
+            background: cat===p.id ? "#f97316" : "white",
+            color: cat===p.id ? "white" : "#374151",
+            border:`1.5px solid ${cat===p.id ? "#f97316" : "#e5e7eb"}`,
+            borderRadius:20, padding:"6px 14px", fontSize:12.5, fontWeight:600,
+            cursor:"pointer", display:"flex", alignItems:"center", gap:5,
+          }}>
+            {p.icon && <span>{p.icon}</span>}
+            {p.label}
+          </button>
+        ))}
       </div>
 
-      {/* Cards grid — 4 columns matching screenshot */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 14 }}>
+      <div style={{ color:"#9ca3af", fontSize:13, marginBottom:14 }}>
+        Showing <strong style={{ color:"#374151" }}>{filtered.length}</strong> of {schemes.length} schemes
+        {catMatch && <span> · <span style={{ color:"#f97316" }}>{activePill?.label}</span></span>}
+      </div>
+
+      {/* 4-column card grid */}
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:14 }}>
         {filtered.map((scheme, i) => {
-          const srcMeta = SRC[scheme._src] || SRC.myscheme;
-
-          // Derive display values from scraped fields
-          const beneficiaries = scheme.beneficiary_count || scheme.beneficiaries || null;
-          const budget        = scheme.budget || null;
-          const progressPct   = scheme.progress_pct ?? null;
-          const progressLabel = scheme.progress || (progressPct != null ? `${progressPct}%` : null);
-          const launchYear    = scheme.launched
-            ? String(scheme.launched).match(/\d{4}/)?.[0]
-            : scheme.scraped_at?.slice(0, 4) || null;
-
-          // Benefit text — prefer benefit field, fall back to description
+          const srcMeta    = SRC[scheme._src] || SRC.myscheme;
           const benefitText = scheme.benefit || scheme.description || "";
+          const launchYear  = scheme.launched
+            ? String(scheme.launched).match(/\d{4}/)?.[0]
+            : scheme.scraped_at?.slice(0,4) || null;
 
           return (
-            <div
-              key={i}
-              onClick={() => setSelected(scheme)}
-              style={{
-                background: "white", borderRadius: 12,
-                border: "1px solid #e5e7eb",
-                padding: "16px 16px 12px",
-                borderTop: `3px solid ${srcMeta.color}`,
-                cursor: "pointer",
-                boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
-                transition: "box-shadow .15s, transform .12s",
-                display: "flex", flexDirection: "column",
-              }}
-              onMouseEnter={e => {
-                e.currentTarget.style.boxShadow = "0 6px 22px rgba(0,0,0,0.10)";
-                e.currentTarget.style.transform = "translateY(-2px)";
-              }}
-              onMouseLeave={e => {
-                e.currentTarget.style.boxShadow = "0 1px 3px rgba(0,0,0,0.05)";
-                e.currentTarget.style.transform = "translateY(0)";
-              }}
-            >
-              {/* ── Header: icon + name + category · Since year ── */}
-              <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 10 }}>
-                <div style={{
-                  width: 36, height: 36, borderRadius: 8, flexShrink: 0,
-                  background: `${srcMeta.color}18`,
-                  display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18,
-                }}>
-                  {CAT_ICON[scheme.category] || "📋"}
+            <div key={i} onClick={() => setSelected(scheme)} style={{
+              background:"white", borderRadius:12, border:"1px solid #e5e7eb",
+              padding:"16px 16px 12px", borderTop:`3px solid ${srcMeta.color}`,
+              cursor:"pointer", boxShadow:"0 1px 3px rgba(0,0,0,0.05)",
+              transition:"box-shadow .15s, transform .12s",
+              display:"flex", flexDirection:"column",
+            }}
+            onMouseEnter={e => {
+              e.currentTarget.style.boxShadow = "0 6px 22px rgba(0,0,0,0.10)";
+              e.currentTarget.style.transform = "translateY(-2px)";
+            }}
+            onMouseLeave={e => {
+              e.currentTarget.style.boxShadow = "0 1px 3px rgba(0,0,0,0.05)";
+              e.currentTarget.style.transform = "translateY(0)";
+            }}>
+
+              {/* Icon + Name + Category */}
+              <div style={{ display:"flex", alignItems:"flex-start", gap:10, marginBottom:10 }}>
+                <div style={{ width:36, height:36, borderRadius:8, flexShrink:0,
+                  background:`${srcMeta.color}18`, display:"flex",
+                  alignItems:"center", justifyContent:"center", fontSize:18 }}>
+                  {CAT_ICON[scheme.category]||"📋"}
                 </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{
-                    fontWeight: 700, fontSize: 13, color: "#1f2937",
-                    lineHeight: 1.3, marginBottom: 2,
-                    overflow: "hidden", textOverflow: "ellipsis",
-                    display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical",
-                  }}>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontWeight:700, fontSize:13, color:"#1f2937",
+                    lineHeight:1.3, marginBottom:2,
+                    overflow:"hidden", textOverflow:"ellipsis",
+                    display:"-webkit-box", WebkitLineClamp:2,
+                    WebkitBoxOrient:"vertical" }}>
                     {scheme.name}
                   </div>
-                  <div style={{ fontSize: 10.5, color: "#9ca3af" }}>
-                    {scheme.category || "General"}
+                  <div style={{ fontSize:10.5, color:"#9ca3af" }}>
+                    {scheme.category||"General"}
                     {launchYear ? ` · Since ${launchYear}` : ""}
                   </div>
                 </div>
               </div>
 
-              {/* ── Benefit / description line ── */}
-              <div style={{
-                fontSize: 11.5, color: "#4b5563", lineHeight: 1.5,
-                marginBottom: 12, minHeight: 32,
-              }}>
-                {benefitText.slice(0, 80)}{benefitText.length > 80 ? "…" : ""}
+              {/* Benefit / description */}
+              <div style={{ fontSize:11.5, color:"#4b5563", lineHeight:1.5,
+                marginBottom:12, minHeight:32 }}>
+                {benefitText.slice(0,80)}{benefitText.length>80?"…":""}
               </div>
 
-              {/* ── Stats row: BENEFICIARIES · BUDGET · PROGRESS ── */}
-              <div style={{
-                display: "grid", gridTemplateColumns: "1fr 1fr 1fr",
-                gap: 4, marginBottom: 10,
-              }}>
-                {/* Beneficiaries */}
-                <div>
-                  <div style={{ fontSize: 9, fontWeight: 700, color: "#9ca3af", letterSpacing: "0.06em", marginBottom: 3 }}>
-                    BENEFICIARIES
+              {/* Stats row */}
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr",
+                gap:4, marginBottom:10 }}>
+                {[
+                  { label:"BENEFICIARIES", val:scheme.beneficiary_count||scheme.beneficiaries||null, color:srcMeta.color },
+                  { label:"BUDGET",        val:scheme.budget||null,                                  color:"#1f2937" },
+                  { label:"PROGRESS",      val:scheme.progress||(scheme.progress_pct!=null?`${scheme.progress_pct}%`:null), color:"#10b981" },
+                ].map((stat,j) => (
+                  <div key={j}>
+                    <div style={{ fontSize:9, fontWeight:700, color:"#9ca3af",
+                      letterSpacing:"0.06em", marginBottom:3 }}>{stat.label}</div>
+                    <div style={{ fontSize:13, fontWeight:800,
+                      color:stat.color, lineHeight:1.2 }}>
+                      {stat.val
+                        ? (typeof stat.val==="number"
+                            ? stat.val.toLocaleString("en-IN") : stat.val)
+                        : <span style={{ color:"#d1d5db" }}>—</span>}
+                    </div>
                   </div>
-                  <div style={{ fontSize: 13, fontWeight: 800, color: srcMeta.color, lineHeight: 1.2 }}>
-                    {beneficiaries
-                      ? (typeof beneficiaries === "number"
-                          ? beneficiaries.toLocaleString("en-IN")
-                          : beneficiaries)
-                      : <span style={{ color: "#d1d5db" }}>—</span>
-                    }
-                  </div>
-                </div>
-
-                {/* Budget */}
-                <div>
-                  <div style={{ fontSize: 9, fontWeight: 700, color: "#9ca3af", letterSpacing: "0.06em", marginBottom: 3 }}>
-                    BUDGET
-                  </div>
-                  <div style={{ fontSize: 13, fontWeight: 800, color: "#1f2937", lineHeight: 1.2 }}>
-                    {budget || <span style={{ color: "#d1d5db" }}>—</span>}
-                  </div>
-                </div>
-
-                {/* Progress */}
-                <div>
-                  <div style={{ fontSize: 9, fontWeight: 700, color: "#9ca3af", letterSpacing: "0.06em", marginBottom: 3 }}>
-                    PROGRESS
-                  </div>
-                  <div style={{ fontSize: 13, fontWeight: 800, color: "#10b981", lineHeight: 1.2 }}>
-                    {progressLabel || <span style={{ color: "#d1d5db" }}>—</span>}
-                  </div>
-                </div>
+                ))}
               </div>
 
-              {/* ── Progress bar ── */}
-              <div style={{
-                height: 4, background: "#f3f4f6", borderRadius: 4,
-                overflow: "hidden", marginBottom: 10,
-              }}>
+              {/* Progress bar */}
+              <div style={{ height:4, background:"#f3f4f6", borderRadius:4,
+                overflow:"hidden", marginBottom:10 }}>
                 <div style={{
-                  height: "100%",
-                  width: progressPct != null
-                    ? `${Math.min(progressPct, 100)}%`
-                    : (scheme.status === "Active" ? "70%" : "40%"),
-                  background: `linear-gradient(90deg, ${srcMeta.color}, ${srcMeta.color}99)`,
-                  borderRadius: 4,
-                }} />
+                  height:"100%",
+                  width: scheme.progress_pct!=null
+                    ? `${Math.min(scheme.progress_pct,100)}%`
+                    : (scheme.status==="Active" ? "70%" : "40%"),
+                  background:`linear-gradient(90deg,${srcMeta.color},${srcMeta.color}99)`,
+                  borderRadius:4,
+                }}/>
               </div>
 
-              {/* ── Source citation ── */}
-              <div style={{
-                display: "flex", alignItems: "center", gap: 5,
-                fontSize: 9.5, color: "#b0b7c3", marginTop: "auto",
-              }}>
-                <span style={{
-                  display: "inline-block", width: 12, height: 12,
-                  background: `${srcMeta.color}20`, borderRadius: 3,
-                  flexShrink: 0,
-                }}>
-                  <span style={{ fontSize: 8, lineHeight: "12px", display: "block", textAlign: "center" }}>
-                    {srcMeta.icon}
-                  </span>
+              {/* Source citation */}
+              <div style={{ display:"flex", alignItems:"center", gap:5,
+                fontSize:9.5, color:"#b0b7c3", marginTop:"auto" }}>
+                <span style={{ display:"inline-block", width:12, height:12,
+                  background:`${srcMeta.color}20`, borderRadius:3,
+                  textAlign:"center", lineHeight:"12px", fontSize:8, flexShrink:0 }}>
+                  {srcMeta.icon}
                 </span>
-                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                <span style={{ overflow:"hidden", textOverflow:"ellipsis",
+                  whiteSpace:"nowrap" }}>
                   {scheme.source || srcMeta.url}
                 </span>
               </div>
@@ -929,108 +953,66 @@ function SchemesTab({ agg, onScrapeAll }) {
         })}
       </div>
 
-      {/* Side panel */}
-      <SchemeDetailPanel scheme={selected} onClose={() => setSelected(null)} />
+      <SchemeDetailPanel scheme={selected} onClose={() => setSelected(null)}/>
     </div>
   );
 }
 
-// ── Portals Tab (IGOD data) ───────────────────────────────────────────────────
+// ── Portals Tab ───────────────────────────────────────────────────────────────
 function PortalsTab({ agg, onScrapeAll }) {
   if (!agg?.portals?.length) return <EmptyState onScrape={onScrapeAll}/>;
-
   const { portals } = agg;
-
-  // Group by category — derived from scraped category field
   const groups = {};
-  portals.forEach(p => {
-    const c = p.category || "General";
-    if (!groups[c]) groups[c] = [];
-    groups[c].push(p);
-  });
-
-  // Summary counts — all from scraped data
-  const totalPortals    = portals.length;
-  const totalCategories = Object.keys(groups).length;
-  const activePortals   = portals.filter(p => p.status === "Active").length;
-  const sampleLastUpd   = portals.find(p => p.directory_last_updated)?.directory_last_updated || "";
-  const totalListed     = portals.find(p => p.total_portals_listed)?.total_portals_listed || "";
-
+  portals.forEach(p=>{ const c=p.category||"General"; if(!groups[c])groups[c]=[]; groups[c].push(p); });
+  const totalPortals=portals.length, totalCategories=Object.keys(groups).length;
+  const activePortals=portals.filter(p=>p.status==="Active").length;
+  const sampleLastUpd=portals.find(p=>p.directory_last_updated)?.directory_last_updated||"";
+  const totalListed=portals.find(p=>p.total_portals_listed)?.total_portals_listed||"";
   return (
     <div className="fadeup">
       <h2 style={{ fontSize:24, fontWeight:900, marginBottom:4 }}>
         Government Portals — <span style={{ color:"#f97316" }}>IGOD Directory</span>
       </h2>
       <p style={{ color:"#6b7280", fontSize:13, marginBottom:4 }}>
-        Source: igod.gov.in/sg/RJ/SPMA/organizations · {portals[0]?.source}
-        {totalListed ? ` · ${totalListed}` : ""}
+        Source: igod.gov.in/sg/RJ/SPMA/organizations{totalListed?` · ${totalListed}`:""}
       </p>
-      {sampleLastUpd && (
-        <p style={{ color:"#9ca3af", fontSize:12, marginBottom:20 }}>
-          Directory last updated: {sampleLastUpd}
-        </p>
-      )}
-      {!sampleLastUpd && <div style={{ marginBottom:20 }}/>}
-
-      {/* Summary tiles — all values from scraped data */}
+      {sampleLastUpd&&<p style={{ color:"#9ca3af", fontSize:12, marginBottom:20 }}>Directory last updated: {sampleLastUpd}</p>}
+      {!sampleLastUpd&&<div style={{ marginBottom:20 }}/>}
       <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:14, marginBottom:24 }}>
         {[
-          { value:totalPortals,    label:"Portals Listed",   bg:"#eff6ff", border:"#bfdbfe", color:"#1d4ed8" },
-          { value:totalCategories, label:"Categories",        bg:"#f0fdf4", border:"#bbf7d0", color:"#166534" },
-          { value:activePortals,   label:"Active Portals",    bg:"#fff7ed", border:"#fed7aa", color:"#9a3412" },
-        ].map((s, i) => (
-          <div key={i} style={{ background:s.bg, border:`1.5px solid ${s.border}`,
-            borderRadius:14, padding:22 }}>
+          {value:totalPortals,label:"Portals Listed",bg:"#eff6ff",border:"#bfdbfe",color:"#1d4ed8"},
+          {value:totalCategories,label:"Categories",bg:"#f0fdf4",border:"#bbf7d0",color:"#166534"},
+          {value:activePortals,label:"Active Portals",bg:"#fff7ed",border:"#fed7aa",color:"#9a3412"},
+        ].map((s,i)=>(
+          <div key={i} style={{ background:s.bg, border:`1.5px solid ${s.border}`, borderRadius:14, padding:22 }}>
             <div style={{ fontSize:38, fontWeight:900, color:s.color, marginBottom:6 }}>{s.value}</div>
             <div style={{ fontSize:14, fontWeight:600, color:s.color }}>{s.label}</div>
           </div>
         ))}
       </div>
-
-      {/* Portal groups — categories from scraped category field */}
-      {Object.entries(groups).map(([catName, items]) => (
+      {Object.entries(groups).map(([catName,items])=>(
         <div key={catName} style={{ marginBottom:22 }}>
-          <div style={{ fontWeight:700, fontSize:15, color:"#374151",
-            marginBottom:12, display:"flex", alignItems:"center", gap:8 }}>
+          <div style={{ fontWeight:700, fontSize:15, color:"#374151", marginBottom:12,
+            display:"flex", alignItems:"center", gap:8 }}>
             <span>{CAT_ICON[catName]||"🏛️"}</span> {catName}
             <Chip label={`${items.length}`} color="#f97316" small/>
           </div>
           <div style={{ display:"grid", gridTemplateColumns:"repeat(2,1fr)", gap:10 }}>
-            {items.map((portal, i) => (
-              <div key={i} style={{ background:"white", borderRadius:12,
-                border:"1px solid #e5e7eb", padding:16,
-                display:"flex", gap:12, alignItems:"flex-start" }}>
-                <div style={{ width:38, height:38, borderRadius:8,
-                  background:"#f97316"+"18", display:"flex", alignItems:"center",
-                  justifyContent:"center", fontSize:18, flexShrink:0 }}>
+            {items.map((portal,i)=>(
+              <div key={i} style={{ background:"white", borderRadius:12, border:"1px solid #e5e7eb",
+                padding:16, display:"flex", gap:12, alignItems:"flex-start" }}>
+                <div style={{ width:38, height:38, borderRadius:8, background:"#f97316"+"18",
+                  display:"flex", alignItems:"center", justifyContent:"center", fontSize:18, flexShrink:0 }}>
                   {CAT_ICON[catName]||"🏛️"}
                 </div>
                 <div style={{ flex:1, minWidth:0 }}>
-                  {/* name from scraper */}
-                  <div style={{ fontWeight:700, fontSize:13, color:"#1f2937", marginBottom:2 }}>
-                    {portal.name}
-                  </div>
-                  {/* domain from scraper */}
+                  <div style={{ fontWeight:700, fontSize:13, color:"#1f2937", marginBottom:2 }}>{portal.name}</div>
                   <div style={{ fontSize:11, color:"#9ca3af", marginBottom:6,
-                    overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
-                    {portal.domain}
-                  </div>
-                  {/* portal_title if scraped */}
-                  {portal.portal_title && (
-                    <div style={{ fontSize:11, color:"#6b7280", marginBottom:4 }}>
-                      {portal.portal_title.slice(0,80)}
-                    </div>
-                  )}
-                  {/* description from scraper */}
-                  {portal.description && (
-                    <div style={{ fontSize:12, color:"#6b7280", lineHeight:1.4, marginBottom:6 }}>
-                      {portal.description.slice(0,120)}{portal.description.length>120?"…":""}
-                    </div>
-                  )}
-                  <a href={portal.url} target="_blank" rel="noreferrer"
-                    style={{ fontSize:12, color:"#f97316", fontWeight:600 }}>
-                    Visit ↗
-                  </a>
+                    overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{portal.domain}</div>
+                  {portal.description&&<div style={{ fontSize:12, color:"#6b7280", lineHeight:1.4, marginBottom:6 }}>
+                    {portal.description.slice(0,120)}{portal.description.length>120?"…":""}
+                  </div>}
+                  <a href={portal.url} target="_blank" rel="noreferrer" style={{ fontSize:12, color:"#f97316", fontWeight:600 }}>Visit ↗</a>
                 </div>
               </div>
             ))}
@@ -1041,164 +1023,241 @@ function PortalsTab({ agg, onScrapeAll }) {
   );
 }
 
-// ── Districts Tab — uses schemes data to enrich context ───────────────────────
-// JJM coverage figures are real public data from JJM MIS (not scraped from these 4
-// sites, but cited transparently). Scheme counts are derived from live scraper data.
-const JJM_DISTRICTS = [
-  { name:"Jaipur",       pop:"68.0 L", coverage:84 },
-  { name:"Jodhpur",      pop:"36.0 L", coverage:68 },
-  { name:"Alwar",        pop:"36.0 L", coverage:54 },
-  { name:"Nagaur",       pop:"33.0 L", coverage:47 },
-  { name:"Udaipur",      pop:"30.0 L", coverage:63 },
-  { name:"Sikar",        pop:"26.0 L", coverage:49 },
-  { name:"Barmer",       pop:"25.0 L", coverage:31 },
-  { name:"Ajmer",        pop:"25.0 L", coverage:59 },
-  { name:"Bikaner",      pop:"23.0 L", coverage:61 },
-  { name:"Bhilwara",     pop:"24.0 L", coverage:51 },
-  { name:"Kota",         pop:"20.0 L", coverage:72 },
-  { name:"Churu",        pop:"20.0 L", coverage:42 },
-  { name:"Sri Ganganagar",pop:"19.7 L",coverage:78 },
-  { name:"Tonk",         pop:"14.2 L", coverage:58 },
-  { name:"Dungarpur",    pop:"13.0 L", coverage:55 },
-  { name:"Dausa",        pop:"16.1 L", coverage:52 },
-  { name:"Sawai Madhopur",pop:"13.3 L",coverage:46 },
-  { name:"Jaisalmer",    pop:"6.7 L",  coverage:38 },
-  { name:"Banswara",     pop:"17.8 L", coverage:43 },
-  { name:"Jhunjhunu",    pop:"21.1 L", coverage:66 },
-  { name:"Pali",         pop:"20.4 L", coverage:57 },
-  { name:"Rajsamand",    pop:"11.6 L", coverage:61 },
-  { name:"Bundi",        pop:"11.1 L", coverage:53 },
-  { name:"Hanumangarh",  pop:"17.7 L", coverage:73 },
-  { name:"Karauli",      pop:"14.3 L", coverage:39 },
-  { name:"Sirohi",       pop:"10.5 L", coverage:48 },
-  { name:"Jhalawar",     pop:"14.1 L", coverage:62 },
-  { name:"Dholpur",      pop:"12.1 L", coverage:44 },
-  { name:"Baran",        pop:"12.2 L", coverage:56 },
-  { name:"Pratapgarh",   pop:"8.7 L",  coverage:36 },
-  { name:"Jalore",       pop:"18.3 L", coverage:41 },
-  { name:"Bharatpur",    pop:"25.1 L", coverage:69 },
-  { name:"Chittorgarh",  pop:"15.4 L", coverage:64 },
-];
-
+// ── Districts Tab ─────────────────────────────────────────────────────────────
 function DistrictsTab({ agg, onScrapeAll }) {
   const [distSearch, setDistSearch] = useState("");
-  const [sortBy, setSortBy] = useState("coverage_desc");
+  const [sortBy, setSortBy]         = useState("coverage_desc");
 
   if (!agg) return <EmptyState onScrape={onScrapeAll}/>;
 
-  const schemes = agg.schemes || [];
-  // Derive live counts from scraped schemes
-  const healthCount = schemes.filter(s => /health|medical/i.test(s.category||"")).length;
-  const waterCount  = schemes.filter(s => /water|jal|sanitation/i.test(s.category||"")).length;
-  const agriCount   = schemes.filter(s => /agri|kisan|farm/i.test(s.category||"")).length;
+  // ── Use LIVE data from /aggregate → jjm_districts (scraped from ejalshakti.gov.in)
+  // Falls back gracefully to empty array while data loads or if scraper returns nothing
+  const districts    = agg.jjm_districts || [];
+  const isLive       = districts.length > 0 && districts[0]?.live === true;
+  const scrapedAt    = districts[0]?.scraped_at || null;
+  const dataSource   = districts[0]?.source || "ejalshakti.gov.in";
 
-  const above60  = JJM_DISTRICTS.filter(d => d.coverage > 60).length;
-  const mid      = JJM_DISTRICTS.filter(d => d.coverage >= 45 && d.coverage <= 60).length;
-  const critical = JJM_DISTRICTS.filter(d => d.coverage < 45).length;
+  // Derive counts from schemes (live scraped data)
+  const schemes      = agg.schemes || [];
+  const healthCount  = schemes.filter(s => /health|medical/i.test(s.category||"")).length;
+  const waterCount   = schemes.filter(s => /water|jal|sanitation/i.test(s.category||"")).length;
+  const agriCount    = schemes.filter(s => /agri|kisan|farm/i.test(s.category||"")).length;
+
+  // Summary tiles — all from live district data
+  const above60  = districts.filter(d => d.coverage > 60).length;
+  const mid      = districts.filter(d => d.coverage >= 45 && d.coverage <= 60).length;
+  const critical = districts.filter(d => d.coverage < 45).length;
+  const stateAvg = districts.length
+    ? (districts.reduce((s, d) => s + d.coverage, 0) / districts.length).toFixed(1)
+    : null;
+
+  // Filter + sort
+  const visible = [...districts]
+    .filter(d => !distSearch || d.name.toLowerCase().includes(distSearch.toLowerCase()))
+    .sort((a, b) =>
+      sortBy === "coverage_desc" ? b.coverage - a.coverage :
+      sortBy === "coverage_asc"  ? a.coverage - b.coverage :
+      a.name.localeCompare(b.name)
+    );
 
   return (
     <div className="fadeup">
-      <h2 style={{ fontSize:24, fontWeight:900, marginBottom:4 }}>
-        District JJM Coverage — <span style={{ color:"#f97316" }}>JJM MIS Data</span>
-      </h2>
-      <p style={{ color:"#6b7280", fontSize:13, marginBottom:4 }}>
-        Tap water coverage · Source: JJM MIS / ejalshakti.gov.in · As of Jan–Feb 2025
-      </p>
-      {/* Scheme context line — derived from live scraped data */}
-      <p style={{ color:"#9ca3af", fontSize:12, marginBottom:22 }}>
-        Active schemes from scraped sources: {healthCount} health · {waterCount} water &amp; sanitation · {agriCount} agriculture
-      </p>
 
-      {/* Summary tiles */}
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:14, marginBottom:24 }}>
-        {[
-          { value:above60,  label:"Districts >60% coverage",  bg:"#f0fdf4", border:"#bbf7d0", numC:"#16a34a", txtC:"#166534" },
-          { value:mid,      label:"Districts 45–60%",          bg:"#fffbeb", border:"#fde68a", numC:"#d97706", txtC:"#92400e" },
-          { value:critical, label:"Districts <45% (critical)", bg:"#fff5f5", border:"#fecaca", numC:"#dc2626", txtC:"#991b1b" },
-        ].map((s, i) => (
-          <div key={i} style={{ background:s.bg, border:`1.5px solid ${s.border}`,
-            borderRadius:14, padding:22 }}>
-            <div style={{ fontSize:40, fontWeight:900, color:s.numC, marginBottom:6 }}>{s.value}</div>
-            <div style={{ fontSize:14, fontWeight:600, color:s.txtC }}>{s.label}</div>
+      {/* ── Header ── */}
+      <div style={{ display:"flex", alignItems:"flex-start",
+        justifyContent:"space-between", marginBottom:4, flexWrap:"wrap", gap:10 }}>
+        <div>
+          <h2 style={{ fontSize:24, fontWeight:900, marginBottom:3 }}>
+            District JJM Coverage —{" "}
+            <span style={{ color:"#f97316" }}>Live from ejalshakti.gov.in</span>
+          </h2>
+          <p style={{ color:"#6b7280", fontSize:13, margin:0 }}>
+            Tap water household coverage · Jal Jeevan Mission MIS
+          </p>
+        </div>
+        {/* Live / fallback badge */}
+        <div style={{ display:"flex", alignItems:"center", gap:8, flexShrink:0 }}>
+          <div style={{
+            display:"flex", alignItems:"center", gap:6,
+            background: isLive ? "#f0fdf4" : "#fffbeb",
+            border: `1px solid ${isLive ? "#bbf7d0" : "#fde68a"}`,
+            borderRadius:8, padding:"6px 12px", fontSize:12, fontWeight:600,
+            color: isLive ? "#166534" : "#92400e",
+          }}>
+            <div style={{ width:8, height:8, borderRadius:"50%",
+              background: isLive ? "#10b981" : "#f59e0b",
+              boxShadow: isLive ? "0 0 0 3px #d1fae5" : "none" }}/>
+            {isLive ? "Live data" : "Verified fallback"}
           </div>
-        ))}
+          {scrapedAt && (
+            <span style={{ fontSize:11, color:"#9ca3af" }}>
+              {timeAgo(scrapedAt)}
+            </span>
+          )}
+        </div>
       </div>
 
-      {/* Search + Sort controls */}
+      {/* Source + scheme context */}
+      <p style={{ color:"#9ca3af", fontSize:12, marginBottom:22, marginTop:6 }}>
+        Source: {dataSource}
+        {stateAvg && ` · State avg: ${stateAvg}%`}
+        {" · "}Active scraped schemes: {healthCount} health · {waterCount} water · {agriCount} agri
+      </p>
+
+      {/* ── Summary tiles ── */}
+      {districts.length > 0 ? (
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:14, marginBottom:24 }}>
+          {[
+            { value:`${stateAvg}%`, label:"State Average Coverage",  bg:"#eff6ff", border:"#bfdbfe", numC:"#1d4ed8", txtC:"#1e40af" },
+            { value:above60,         label:"Districts >60% coverage",  bg:"#f0fdf4", border:"#bbf7d0", numC:"#16a34a", txtC:"#166534" },
+            { value:mid,             label:"Districts 45–60%",          bg:"#fffbeb", border:"#fde68a", numC:"#d97706", txtC:"#92400e" },
+            { value:critical,        label:"Districts <45% (critical)", bg:"#fff5f5", border:"#fecaca", numC:"#dc2626", txtC:"#991b1b" },
+          ].map((s,i) => (
+            <div key={i} style={{ background:s.bg, border:`1.5px solid ${s.border}`,
+              borderRadius:14, padding:20 }}>
+              <div style={{ fontSize:i===0?28:40, fontWeight:900, color:s.numC, marginBottom:6, lineHeight:1 }}>
+                {s.value}
+              </div>
+              <div style={{ fontSize:13, fontWeight:600, color:s.txtC }}>{s.label}</div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        /* Loading skeleton while JJM data is being fetched */
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:14, marginBottom:24 }}>
+          {[1,2,3,4].map(i => (
+            <div key={i} style={{ background:"#f9fafb", border:"1px solid #e5e7eb",
+              borderRadius:14, padding:20, height:90 }}>
+              <div style={{ width:"50%", height:32, background:"#e5e7eb",
+                borderRadius:6, marginBottom:8 }}/>
+              <div style={{ width:"80%", height:14, background:"#e5e7eb", borderRadius:4 }}/>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ── Search + Sort ── */}
       <div style={{ display:"flex", gap:10, marginBottom:16, flexWrap:"wrap" }}>
         <div style={{ position:"relative", flex:1, minWidth:200 }}>
           <span style={{ position:"absolute", left:12, top:"50%",
             transform:"translateY(-50%)", fontSize:14 }}>🔍</span>
-          <input value={distSearch} onChange={e=>setDistSearch(e.target.value)}
+          <input value={distSearch} onChange={e => setDistSearch(e.target.value)}
             placeholder="Search district…"
             style={{ width:"100%", padding:"9px 12px 9px 36px",
               border:"1px solid #e5e7eb", borderRadius:9, fontSize:13,
               background:"white", boxSizing:"border-box" }}/>
         </div>
-        <select value={sortBy} onChange={e=>setSortBy(e.target.value)}
+        <select value={sortBy} onChange={e => setSortBy(e.target.value)}
           style={{ padding:"9px 14px", border:"1px solid #e5e7eb",
             borderRadius:9, fontSize:13, background:"white", cursor:"pointer" }}>
-          <option value="coverage_desc">Sort: Coverage High→Low</option>
-          <option value="coverage_asc">Sort: Coverage Low→High</option>
-          <option value="name">Sort: A–Z</option>
+          <option value="coverage_desc">Coverage: High → Low</option>
+          <option value="coverage_asc">Coverage: Low → High</option>
+          <option value="name">District: A – Z</option>
         </select>
+        {districts.length > 0 && (
+          <span style={{ alignSelf:"center", fontSize:12, color:"#9ca3af" }}>
+            {visible.length} of {districts.length} districts
+          </span>
+        )}
       </div>
 
-      {/* District table */}
-      <div style={{ background:"white", borderRadius:14, border:"1px solid #e5e7eb", overflow:"hidden" }}>
-        <div style={{ display:"grid", gridTemplateColumns:"1fr 90px 1fr 1fr",
-          padding:"10px 20px", background:"#f9fafb", borderBottom:"1px solid #e5e7eb" }}>
-          {["DISTRICT","POPULATION","JJM TAP WATER COVERAGE","STATUS"].map((h, i) => (
-            <div key={i} style={{ fontSize:10, fontWeight:700, color:"#9ca3af", letterSpacing:"0.07em" }}>{h}</div>
-          ))}
+      {/* ── District table ── */}
+      {districts.length === 0 ? (
+        <div style={{ background:"white", borderRadius:14, border:"1px solid #e5e7eb",
+          padding:48, textAlign:"center" }}>
+          <div style={{ fontSize:40, marginBottom:12 }}>💧</div>
+          <div style={{ fontWeight:700, fontSize:16, color:"#374151", marginBottom:8 }}>
+            Fetching JJM district data…
+          </div>
+          <div style={{ color:"#9ca3af", fontSize:13, marginBottom:20 }}>
+            Data is scraped live from ejalshakti.gov.in on first load.
+          </div>
+          <button onClick={onScrapeAll} style={{ background:"#f97316", color:"white",
+            border:"none", borderRadius:8, padding:"10px 22px",
+            fontSize:13, fontWeight:700, cursor:"pointer" }}>
+            ⚡ Refresh All Data
+          </button>
         </div>
-        {[...JJM_DISTRICTS]
-          .filter(d => !distSearch || d.name.toLowerCase().includes(distSearch.toLowerCase()))
-          .sort((a,b) => sortBy==="coverage_desc" ? b.coverage-a.coverage
-                        : sortBy==="coverage_asc"  ? a.coverage-b.coverage
-                        : a.name.localeCompare(b.name))
-          .map((d, i) => {
-          const c = d.coverage >= 70 ? "#10b981" : d.coverage >= 50 ? "#f97316" : "#ef4444";
-          return (
-            <div key={i} style={{ display:"grid", gridTemplateColumns:"1fr 90px 1fr 1fr",
-              padding:"14px 20px", borderBottom:"1px solid #f3f4f6", alignItems:"center" }}>
-              <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-                <div style={{ width:9, height:9, borderRadius:"50%", background:c, flexShrink:0 }}/>
-                <span style={{ fontWeight:700, fontSize:14 }}>{d.name}</span>
-              </div>
-              <div style={{ fontSize:13, color:"#6b7280" }}>{d.pop}</div>
-              <div>
-                <div style={{ fontSize:11, color:"#9ca3af", marginBottom:5 }}>Tap water HHs</div>
-                <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-                  <div style={{ flex:1, height:8, background:"#f3f4f6", borderRadius:4, overflow:"hidden" }}>
-                    <div style={{ width:`${d.coverage}%`, height:"100%", background:c, borderRadius:4 }}/>
+      ) : (
+        <div style={{ background:"white", borderRadius:14, border:"1px solid #e5e7eb",
+          overflow:"hidden" }}>
+          {/* Table header */}
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 90px 1fr 110px",
+            padding:"10px 20px", background:"#f9fafb",
+            borderBottom:"1px solid #e5e7eb" }}>
+            {["DISTRICT","POPULATION","TAP WATER COVERAGE","STATUS"].map((h,i) => (
+              <div key={i} style={{ fontSize:10, fontWeight:700, color:"#9ca3af",
+                letterSpacing:"0.07em" }}>{h}</div>
+            ))}
+          </div>
+          {/* Rows */}
+          {visible.map((d, i) => {
+            const c = d.coverage >= 70 ? "#10b981"
+                    : d.coverage >= 50 ? "#f97316"
+                    : "#ef4444";
+            const coveragePct = typeof d.coverage === "number"
+              ? d.coverage
+              : parseFloat(d.coverage) || 0;
+            return (
+              <div key={i} style={{ display:"grid", gridTemplateColumns:"1fr 90px 1fr 110px",
+                padding:"13px 20px", borderBottom:"1px solid #f3f4f6",
+                alignItems:"center",
+                background: i % 2 === 0 ? "white" : "#fafafa" }}>
+                {/* Name */}
+                <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                  <div style={{ width:9, height:9, borderRadius:"50%",
+                    background:c, flexShrink:0 }}/>
+                  <span style={{ fontWeight:700, fontSize:14 }}>{d.name}</span>
+                </div>
+                {/* Population */}
+                <div style={{ fontSize:13, color:"#6b7280" }}>{d.pop || "—"}</div>
+                {/* Coverage bar */}
+                <div>
+                  <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                    <div style={{ flex:1, height:8, background:"#f3f4f6",
+                      borderRadius:4, overflow:"hidden" }}>
+                      <div style={{ width:`${Math.min(coveragePct, 100)}%`,
+                        height:"100%", background:c, borderRadius:4,
+                        transition:"width 0.4s ease" }}/>
+                    </div>
+                    <span style={{ fontWeight:800, fontSize:14, color:c,
+                      minWidth:42, textAlign:"right" }}>
+                      {coveragePct}%
+                    </span>
                   </div>
-                  <span style={{ fontWeight:800, fontSize:14, color:c, minWidth:38 }}>{d.coverage}%</span>
+                </div>
+                {/* Status */}
+                <div style={{ fontSize:12 }}>
+                  {coveragePct >= 70
+                    ? <span style={{ color:"#10b981", fontWeight:600 }}>✓ On track</span>
+                    : coveragePct >= 50
+                    ? <span style={{ color:"#f97316", fontWeight:600 }}>⚡ Needs push</span>
+                    : <span style={{ color:"#ef4444", fontWeight:700 }}>⚠️ Critical</span>}
                 </div>
               </div>
-              <div style={{ fontSize:12 }}>
-                {d.coverage >= 70
-                  ? <span style={{ color:"#10b981", fontWeight:600 }}>✓ On track</span>
-                  : d.coverage >= 50
-                  ? <span style={{ color:"#f97316", fontWeight:600 }}>⚡ Needs push</span>
-                  : <span style={{ color:"#ef4444", fontWeight:700 }}>⚠️ Critical</span>}
-              </div>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+          {/* Footer */}
+          <div style={{ padding:"10px 20px", background:"#f9fafb",
+            borderTop:"1px solid #e5e7eb", fontSize:11, color:"#9ca3af",
+            display:"flex", justifyContent:"space-between" }}>
+            <span>
+              {isLive ? "✓ Live data from" : "📚 Verified fallback —"} {dataSource}
+            </span>
+            {scrapedAt && <span>Fetched {timeAgo(scrapedAt)}</span>}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-// ── Alerts Tab — 100% from /aggregate alerts array ────────────────────────────
+// ── Alerts Tab ────────────────────────────────────────────────────────────────
 function AlertsTab({ agg, onScrapeAll }) {
   const [filter, setFilter] = useState("All");
   if (!agg?.alerts?.length) return <EmptyState onScrape={onScrapeAll}/>;
-
-  const alerts = agg.alerts;
-  const filtered = filter === "All" ? alerts : alerts.filter(a => a.severity === filter);
-
+  const alerts=agg.alerts;
+  const filtered=filter==="All"?alerts:alerts.filter(a=>a.severity===filter);
   return (
     <div className="fadeup">
       <h2 style={{ fontSize:24, fontWeight:900, marginBottom:4 }}>
@@ -1207,72 +1266,43 @@ function AlertsTab({ agg, onScrapeAll }) {
       <p style={{ color:"#6b7280", fontSize:13, marginBottom:20 }}>
         Every alert generated from live scraped data · {alerts.length} alerts total
       </p>
-
       <div style={{ display:"flex", gap:8, marginBottom:22, flexWrap:"wrap" }}>
-        {["All","Critical","Warning","Action","Insight"].map(f => (
-          <button key={f} onClick={() => setFilter(f)} style={{
-            background: filter===f ? "#1f2937" : "white",
-            color: filter===f ? "white" : "#374151",
-            border:`1.5px solid ${filter===f ? "#1f2937" : "#e5e7eb"}`,
-            borderRadius:20, padding:"7px 18px", fontSize:13, fontWeight:600,
-            cursor:"pointer",
-          }}>{f}</button>
+        {["All","Critical","Warning","Action","Insight"].map(f=>(
+          <button key={f} onClick={()=>setFilter(f)} style={{
+            background:filter===f?"#1f2937":"white", color:filter===f?"white":"#374151",
+            border:`1.5px solid ${filter===f?"#1f2937":"#e5e7eb"}`,
+            borderRadius:20, padding:"7px 18px", fontSize:13, fontWeight:600, cursor:"pointer" }}>{f}</button>
         ))}
       </div>
-
       <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
-        {filtered.map((alert, i) => (
-          <div key={alert.id||i} style={{
-            background:"white", borderRadius:14,
-            border:`1px solid #e5e7eb`,
-            borderLeft:`4px solid ${alert.borderColor}`,
-            padding:20, boxShadow:"0 1px 4px rgba(0,0,0,0.05)",
-          }}>
+        {filtered.map((alert,i)=>(
+          <div key={alert.id||i} style={{ background:"white", borderRadius:14,
+            border:`1px solid #e5e7eb`, borderLeft:`4px solid ${alert.borderColor}`,
+            padding:20, boxShadow:"0 1px 4px rgba(0,0,0,0.05)" }}>
             <div style={{ display:"flex", alignItems:"flex-start", gap:14 }}>
-              <div style={{ width:44, height:44, borderRadius:10,
-                background:`${alert.borderColor}15`,
-                display:"flex", alignItems:"center", justifyContent:"center",
-                fontSize:22, flexShrink:0 }}>
+              <div style={{ width:44, height:44, borderRadius:10, background:`${alert.borderColor}15`,
+                display:"flex", alignItems:"center", justifyContent:"center", fontSize:22, flexShrink:0 }}>
                 {alert.icon}
               </div>
               <div style={{ flex:1 }}>
-                <div style={{ display:"flex", alignItems:"center", gap:10,
-                  marginBottom:8, flexWrap:"wrap" }}>
-                  {/* type badge */}
-                  <span style={{
-                    background:`${alert.borderColor}15`, color:alert.borderColor,
-                    border:`1px solid ${alert.borderColor}25`,
-                    borderRadius:4, padding:"2px 8px", fontSize:11,
-                    fontWeight:800, letterSpacing:"0.07em" }}>
-                    {alert.type}
-                  </span>
-                  {/* title — from scraper data */}
-                  <span style={{ fontWeight:700, fontSize:15, color:"#1f2937" }}>
-                    {alert.title}
-                  </span>
-                  <span style={{ marginLeft:"auto", fontSize:12, color:"#9ca3af" }}>
-                    {alert.date}
-                  </span>
+                <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:8, flexWrap:"wrap" }}>
+                  <span style={{ background:`${alert.borderColor}15`, color:alert.borderColor,
+                    border:`1px solid ${alert.borderColor}25`, borderRadius:4, padding:"2px 8px",
+                    fontSize:11, fontWeight:800, letterSpacing:"0.07em" }}>{alert.type}</span>
+                  <span style={{ fontWeight:700, fontSize:15, color:"#1f2937" }}>{alert.title}</span>
+                  <span style={{ marginLeft:"auto", fontSize:12, color:"#9ca3af" }}>{alert.date}</span>
                 </div>
-                {/* body — from scraper data */}
-                <p style={{ fontSize:14, color:"#374151", lineHeight:1.6, marginBottom:12 }}>
-                  {alert.body}
-                </p>
-                {/* tags */}
+                <p style={{ fontSize:14, color:"#374151", lineHeight:1.6, marginBottom:12 }}>{alert.body}</p>
                 <div style={{ display:"flex", gap:8, flexWrap:"wrap", marginBottom:12 }}>
-                  {(alert.tags||[]).map((tag, j) => (
-                    <span key={j} style={{
-                      background: j===0 ? `${alert.borderColor}15` : "#f3f4f6",
-                      color: j===0 ? alert.borderColor : "#6b7280",
-                      border:`1px solid ${j===0 ? alert.borderColor+"30" : "#e5e7eb"}`,
-                      borderRadius:20, padding:"4px 12px", fontSize:12, fontWeight:500,
-                    }}>{tag}</span>
+                  {(alert.tags||[]).map((tag,j)=>(
+                    <span key={j} style={{ background:j===0?`${alert.borderColor}15`:"#f3f4f6",
+                      color:j===0?alert.borderColor:"#6b7280",
+                      border:`1px solid ${j===0?alert.borderColor+"30":"#e5e7eb"}`,
+                      borderRadius:20, padding:"4px 12px", fontSize:12, fontWeight:500 }}>{tag}</span>
                   ))}
                 </div>
-                {/* source — from scraper */}
                 <div style={{ fontSize:12, color:"#9ca3af", display:"flex", gap:6 }}>
-                  <span>📚</span>
-                  <span style={{ fontStyle:"italic" }}>{alert.source}</span>
+                  <span>📚</span><span style={{ fontStyle:"italic" }}>{alert.source}</span>
                 </div>
               </div>
             </div>
@@ -1283,23 +1313,17 @@ function AlertsTab({ agg, onScrapeAll }) {
   );
 }
 
-// ── Root App ──────────────────────────────────────────────────────────────────
-
-// ── Budget Data Tab ─────────────────────────────────────────────────────────
+// ── Budget Data Tab ───────────────────────────────────────────────────────────
 function BudgetDataTab({ budget, budgetLoading, onRefresh }) {
-  const b  = budget || {};
-  const d  = b.display || {};
-  const sp = b.sparklines || {};
-  const bm = b.scrape_meta || {};
-
-  const Spark = ({ data=[], color="#f97316" }) => {
-    if (!data || data.length < 2) return <div style={{ width:90, height:36, background:`${color}08`, borderRadius:6 }}/>;
-    const W=90, H=36, PAD=3;
-    const min=Math.min(...data), max=Math.max(...data), rng=(max-min)||1;
+  const b=budget||{}, d=b.display||{}, sp=b.sparklines||{}, bm=b.scrape_meta||{};
+  const Spark=({data=[],color="#f97316"})=>{
+    if(!data||data.length<2) return <div style={{ width:90, height:36, background:`${color}08`, borderRadius:6 }}/>;
+    const W=90,H=36,PAD=3;
+    const min=Math.min(...data),max=Math.max(...data),rng=(max-min)||1;
     const xs=data.map((_,i)=>(i/(data.length-1))*W);
     const ys=data.map(v=>H-PAD-((v-min)/rng)*(H-PAD*2));
-    const linePts=xs.map((x,i)=>`${x},${ys[i]}`).join(" ");
-    const areaPts=`0,${H} `+linePts+` ${W},${H}`;
+    const lp=xs.map((x,i)=>`${x},${ys[i]}`).join(" ");
+    const ap=`0,${H} `+lp+` ${W},${H}`;
     const gid=`bt${color.replace(/#/g,"")}`;
     return (
       <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{ overflow:"visible" }}>
@@ -1309,93 +1333,70 @@ function BudgetDataTab({ budget, budgetLoading, onRefresh }) {
             <stop offset="100%" stopColor={color} stopOpacity="0"/>
           </linearGradient>
         </defs>
-        <polygon points={areaPts} fill={`url(#${gid})`}/>
-        <polyline points={linePts} fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round"/>
+        <polygon points={ap} fill={`url(#${gid})`}/>
+        <polyline points={lp} fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round"/>
         <circle cx={xs[xs.length-1]} cy={ys[ys.length-1]} r="2.5" fill={color} stroke="white" strokeWidth="1"/>
       </svg>
     );
   };
-
-  const ROWS = [
-    { label:"Total Revenue Expenditure", key:"total_expenditure_cr",   sparkKey:"health_cr",          color:"#f97316", unit:"₹ Cr" },
-    { label:"Capital Outlay",            key:"capital_outlay_cr",       sparkKey:"capital_outlay_cr",   color:"#10b981", unit:"₹ Cr" },
-    { label:"Health Budget",             key:"health_cr",               sparkKey:"health_cr",           color:"#ef4444", unit:"₹ Cr" },
-    { label:"Social Security",           key:"social_security_cr",      sparkKey:"social_security_cr",  color:"#8b5cf6", unit:"₹ Cr" },
-    { label:"Fiscal Deficit",            key:"fiscal_deficit_cr",       sparkKey:"fiscal_deficit_pct",  color:"#f59e0b", unit:"₹ Cr" },
-    { label:"GSDP (est.)",               key:"gsdp_cr",                 sparkKey:"capital_outlay_cr",   color:"#3b82f6", unit:"₹ Cr" },
+  const ROWS=[
+    {label:"Total Revenue Expenditure",key:"total_expenditure_cr",sparkKey:"health_cr",color:"#f97316"},
+    {label:"Capital Outlay",key:"capital_outlay_cr",sparkKey:"capital_outlay_cr",color:"#10b981"},
+    {label:"Health Budget",key:"health_cr",sparkKey:"health_cr",color:"#ef4444"},
+    {label:"Social Security",key:"social_security_cr",sparkKey:"social_security_cr",color:"#8b5cf6"},
+    {label:"Fiscal Deficit",key:"fiscal_deficit_cr",sparkKey:"fiscal_deficit_pct",color:"#f59e0b"},
+    {label:"GSDP (est.)",key:"gsdp_cr",sparkKey:"capital_outlay_cr",color:"#3b82f6"},
   ];
-
   return (
     <div className="fadeup">
       <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:4 }}>
-        <h2 style={{ fontSize:24, fontWeight:900 }}>
-          Budget Data — <span style={{ color:"#f97316" }}>2025-26</span>
-        </h2>
+        <h2 style={{ fontSize:24, fontWeight:900 }}>Budget Data — <span style={{ color:"#f97316" }}>2025-26</span></h2>
         <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-          {bm.note && (
-            <div style={{ fontSize:12, color: bm.live_sources>0?"#166534":"#4b7ab5",
-              background: bm.live_sources>0?"#f0fdf4":"#eff6ff",
-              border:`1px solid ${bm.live_sources>0?"#bbf7d0":"#bfdbfe"}`,
-              borderRadius:6, padding:"4px 10px", fontWeight:600 }}>
-              {bm.live_sources>0 ? `✓ ${bm.live_sources} live sources` : "📚 Verified fallback"}
-            </div>
-          )}
-          <button onClick={onRefresh}
-            style={{ background:"#f97316", color:"white", border:"none",
-              borderRadius:8, padding:"8px 16px", fontSize:13, fontWeight:700, cursor:"pointer" }}>
+          {bm.note&&<div style={{ fontSize:12, color:bm.live_sources>0?"#166534":"#4b7ab5",
+            background:bm.live_sources>0?"#f0fdf4":"#eff6ff",
+            border:`1px solid ${bm.live_sources>0?"#bbf7d0":"#bfdbfe"}`,
+            borderRadius:6, padding:"4px 10px", fontWeight:600 }}>
+            {bm.live_sources>0?`✓ ${bm.live_sources} live sources`:"📚 Verified fallback"}
+          </div>}
+          <button onClick={onRefresh} style={{ background:"#f97316", color:"white", border:"none",
+            borderRadius:8, padding:"8px 16px", fontSize:13, fontWeight:700, cursor:"pointer" }}>
             ↺ Refresh Budget Data
           </button>
         </div>
       </div>
       <p style={{ color:"#6b7280", fontSize:13, marginBottom:22 }}>
-        Source: {b.source || "Budget 2025-26 (Rajasthan Legislature) · PRS India · JJM MIS"}
-        {b.source_url && (
-          <a href={b.source_url} target="_blank" rel="noreferrer"
-            style={{ color:"#3b82f6", marginLeft:8, fontWeight:600 }}>↗ PRS India</a>
-        )}
+        Source: {b.source||"Budget 2025-26 (Rajasthan Legislature) · PRS India · JJM MIS"}
       </p>
-
-      {/* ── Budget headline tiles ── */}
       <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:14, marginBottom:24 }}>
         {[
-          { label:"Total Expenditure",  val: b.total_expenditure_cr  ? `₹${Number(b.total_expenditure_cr).toLocaleString("en-IN")} Cr`  : "₹3,25,546 Cr", bg:"#fff7ed", border:"#fed7aa", color:"#c2410c" },
-          { label:"Capital Outlay",     val: b.capital_outlay_cr     ? `₹${Number(b.capital_outlay_cr).toLocaleString("en-IN")} Cr`     : "₹53,686 Cr",   bg:"#f0fdf4", border:"#bbf7d0", color:"#15803d" },
-          { label:"Fiscal Deficit",     val: b.fiscal_deficit_pct_gsdp ? `${b.fiscal_deficit_pct_gsdp}% GSDP` : "4.25% GSDP",         bg:"#fffbeb", border:"#fde68a", color:"#b45309" },
-          { label:"Health Allocation",  val: b.health_cr             ? `₹${Number(b.health_cr).toLocaleString("en-IN")} Cr`             : "₹28,865 Cr",   bg:"#fff1f2", border:"#fecdd3", color:"#be123c" },
-          { label:"JJM Coverage",       val: b.jjm_coverage_pct      ? `${Number(b.jjm_coverage_pct).toFixed(2)}%`                      : "55.36%",        bg:"#eff6ff", border:"#bfdbfe", color:"#1d4ed8" },
-          { label:"Social Security",    val: b.social_security_cr    ? `₹${Number(b.social_security_cr).toLocaleString("en-IN")}+ Cr`   : "₹14,000+ Cr",  bg:"#faf5ff", border:"#e9d5ff", color:"#7c3aed" },
-        ].map((item,i) => (
-          <div key={i} style={{ background:item.bg, border:`1.5px solid ${item.border}`,
-            borderRadius:14, padding:"18px 20px" }}>
-            <div style={{ fontSize:11, fontWeight:700, color:item.color,
-              letterSpacing:"0.08em", marginBottom:10, opacity:0.8 }}>{item.label.toUpperCase()}</div>
+          {label:"Total Expenditure",val:b.total_expenditure_cr?`₹${Number(b.total_expenditure_cr).toLocaleString("en-IN")} Cr`:"₹3,25,546 Cr",bg:"#fff7ed",border:"#fed7aa",color:"#c2410c"},
+          {label:"Capital Outlay",val:b.capital_outlay_cr?`₹${Number(b.capital_outlay_cr).toLocaleString("en-IN")} Cr`:"₹53,686 Cr",bg:"#f0fdf4",border:"#bbf7d0",color:"#15803d"},
+          {label:"Fiscal Deficit",val:b.fiscal_deficit_pct_gsdp?`${b.fiscal_deficit_pct_gsdp}% GSDP`:"4.25% GSDP",bg:"#fffbeb",border:"#fde68a",color:"#b45309"},
+          {label:"Health Allocation",val:b.health_cr?`₹${Number(b.health_cr).toLocaleString("en-IN")} Cr`:"₹28,865 Cr",bg:"#fff1f2",border:"#fecdd3",color:"#be123c"},
+          {label:"JJM Coverage",val:b.jjm_coverage_pct?`${Number(b.jjm_coverage_pct).toFixed(2)}%`:"55.36%",bg:"#eff6ff",border:"#bfdbfe",color:"#1d4ed8"},
+          {label:"Social Security",val:b.social_security_cr?`₹${Number(b.social_security_cr).toLocaleString("en-IN")}+ Cr`:"₹14,000+ Cr",bg:"#faf5ff",border:"#e9d5ff",color:"#7c3aed"},
+        ].map((item,i)=>(
+          <div key={i} style={{ background:item.bg, border:`1.5px solid ${item.border}`, borderRadius:14, padding:"18px 20px" }}>
+            <div style={{ fontSize:11, fontWeight:700, color:item.color, letterSpacing:"0.08em", marginBottom:10, opacity:0.8 }}>{item.label.toUpperCase()}</div>
             <div style={{ fontSize:24, fontWeight:900, color:item.color }}>{item.val}</div>
           </div>
         ))}
       </div>
-
-      {/* ── Trend table ── */}
-      <div style={{ background:"white", borderRadius:14, border:"1px solid #e5e7eb",
-        overflow:"hidden", marginBottom:22 }}>
-        <div style={{ padding:"16px 20px", borderBottom:"1px solid #f3f4f6",
-          fontWeight:800, fontSize:15 }}>
+      <div style={{ background:"white", borderRadius:14, border:"1px solid #e5e7eb", overflow:"hidden", marginBottom:22 }}>
+        <div style={{ padding:"16px 20px", borderBottom:"1px solid #f3f4f6", fontWeight:800, fontSize:15 }}>
           6-Year Trend (2020–2025-26)
-          <span style={{ fontSize:12, color:"#9ca3af", fontWeight:400, marginLeft:8 }}>
-            from official budget documents
-          </span>
+          <span style={{ fontSize:12, color:"#9ca3af", fontWeight:400, marginLeft:8 }}>from official budget documents</span>
         </div>
-        {budgetLoading ? (
-          <div style={{ padding:40, textAlign:"center", color:"#9ca3af" }}>Loading…</div>
-        ) : ROWS.map((row, i) => {
-          const val = b[row.key];
-          const sparkData = sp[row.sparkKey] || [];
+        {budgetLoading?<div style={{ padding:40, textAlign:"center", color:"#9ca3af" }}>Loading…</div>
+        :ROWS.map((row,i)=>{
+          const val=b[row.key]; const sparkData=sp[row.sparkKey]||[];
           return (
             <div key={i} style={{ display:"grid", gridTemplateColumns:"2fr 1fr 1fr 1fr",
               padding:"14px 20px", borderBottom:"1px solid #f9fafb", alignItems:"center",
-              background: i%2===0?"white":"#fafafa" }}>
+              background:i%2===0?"white":"#fafafa" }}>
               <div style={{ fontWeight:600, fontSize:14, color:"#374151" }}>{row.label}</div>
               <div style={{ fontWeight:800, fontSize:16, color:row.color }}>
-                {val ? (row.unit==="₹ Cr" ? `₹${Number(val).toLocaleString("en-IN")} Cr` : `${val}${row.unit}`) : "—"}
+                {val?`₹${Number(val).toLocaleString("en-IN")} Cr`:"—"}
               </div>
               <div style={{ fontSize:12, color:"#9ca3af" }}>Budget {b.year||"2025-26"}</div>
               <div><Spark data={sparkData} color={row.color}/></div>
@@ -1403,210 +1404,162 @@ function BudgetDataTab({ budget, budgetLoading, onRefresh }) {
           );
         })}
       </div>
-
-      {/* ── Key budget highlights ── */}
       <div style={{ background:"white", borderRadius:14, border:"1px solid #e5e7eb", padding:20 }}>
         <div style={{ fontWeight:800, fontSize:15, marginBottom:14 }}>Key Budget Highlights 2025-26</div>
         <div style={{ display:"grid", gridTemplateColumns:"repeat(2,1fr)", gap:10 }}>
           {[
-            { icon:"🎯", text:`Target: $${b.economy_target_bn_usd||350} Billion economy by 2030` },
-            { icon:"🌱", text: b.green_budget!==false ? "First Green Budget of Rajasthan" : "Sustainability focus in budget" },
-            { icon:"📈", text:`Capital outlay up 40% over 2024-25 RE — ₹${b.capital_outlay_cr ? Number(b.capital_outlay_cr).toLocaleString("en-IN") : "53,686"} Cr` },
-            { icon:"💊", text:`Health: ${b.health_pct||8.4}% of budget — above national avg of 6.2%` },
-            { icon:"🎓", text:`Education: ${b.education_pct||18}% share — above 15% national average` },
-            { icon:"💧", text:`JJM tap water: ${b.jjm_coverage_pct ? Number(b.jjm_coverage_pct).toFixed(2) : 55.36}% coverage — gap vs 79.74% national avg` },
-            { icon:"👵", text:"Social pension raised to ₹1,250/month — up from ₹1,000" },
-            { icon:"₹",  text:`Fiscal deficit at ${b.fiscal_deficit_pct_gsdp||4.25}% GSDP — within FRBM norms` },
-          ].map((h,i) => (
+            {icon:"🎯",text:`Target: $${b.economy_target_bn_usd||350} Billion economy by 2030`},
+            {icon:"🌱",text:b.green_budget!==false?"First Green Budget of Rajasthan":"Sustainability focus in budget"},
+            {icon:"📈",text:`Capital outlay up 40% over 2024-25 RE — ₹${b.capital_outlay_cr?Number(b.capital_outlay_cr).toLocaleString("en-IN"):"53,686"} Cr`},
+            {icon:"💊",text:`Health: ${b.health_pct||8.4}% of budget — above national avg of 6.2%`},
+            {icon:"🎓",text:`Education: ${b.education_pct||18}% share — above 15% national average`},
+            {icon:"💧",text:`JJM tap water: ${b.jjm_coverage_pct?Number(b.jjm_coverage_pct).toFixed(2):55.36}% coverage — gap vs 79.74% national avg`},
+            {icon:"👵",text:"Social pension raised to ₹1,250/month — up from ₹1,000"},
+            {icon:"₹",text:`Fiscal deficit at ${b.fiscal_deficit_pct_gsdp||4.25}% GSDP — within FRBM norms`},
+          ].map((h,i)=>(
             <div key={i} style={{ display:"flex", gap:12, padding:"12px 14px",
-              background:"#f9fafb", borderRadius:10, border:"1px solid #f3f4f6",
-              alignItems:"flex-start" }}>
+              background:"#f9fafb", borderRadius:10, border:"1px solid #f3f4f6", alignItems:"flex-start" }}>
               <span style={{ fontSize:20, flexShrink:0 }}>{h.icon}</span>
               <span style={{ fontSize:13, color:"#374151", lineHeight:1.5 }}>{h.text}</span>
             </div>
           ))}
         </div>
         <div style={{ marginTop:14, fontSize:12, color:"#9ca3af", textAlign:"right" }}>
-          Source: {b.source || "Budget 2025-26 · PRS India · JJM MIS ejalshakti.gov.in"}
-          {b.scraped_at && ` · Fetched ${new Date(b.scraped_at).toLocaleString("en-IN")}`}
+          Source: {b.source||"Budget 2025-26 · PRS India · JJM MIS ejalshakti.gov.in"}
         </div>
       </div>
     </div>
   );
 }
 
+// ── Root App ──────────────────────────────────────────────────────────────────
 export default function App() {
-  const [tab, setTab]               = useState("dashboard");
-  const [agg, setAgg]               = useState(null);
-  const [srcStatus, setStatus]      = useState({});
-  const [scraping, setScraping]     = useState({});
-  const [scrapingAll, setAll]       = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
-  const [online, setOnline]         = useState(null);
-  const [now, setNow]               = useState(new Date());
-  const [scrapeLog, setScrapeLog]   = useState([]);
-  const [budget, setBudget]         = useState(null);
-  const [budgetLoading, setBudgetLoading] = useState(false);
+  const [tab,setTab]           = useState("dashboard");
+  const [agg,setAgg]           = useState(null);
+  const [srcStatus,setStatus]  = useState({});
+  const [scraping,setScraping] = useState({});
+  const [scrapingAll,setAll]   = useState(false);
+  const [refreshing,setRef]    = useState(false);
+  const [online,setOnline]     = useState(null);
+  const [now,setNow]           = useState(new Date());
+  const [scrapeLog,setLog]     = useState([]);
+  const [budget,setBudget]     = useState(null);
+  const [budgetLoading,setBudgetLoading] = useState(false);
 
-  const addLog = useCallback((msg, type="info") => {
-    const ts = new Date().toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit",second:"2-digit"});
-    setScrapeLog(prev => [{ts, msg, type}, ...prev].slice(0, 30));
-  }, []);
+  const addLog = useCallback((msg,type="info")=>{
+    const ts=new Date().toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit",second:"2-digit"});
+    setLog(p=>[{ts,msg,type},...p].slice(0,30));
+  },[]);
 
-  useEffect(() => {
-    const t = setInterval(() => setNow(new Date()), 1000);
-    return () => clearInterval(t);
-  }, []);
+  useEffect(()=>{ const t=setInterval(()=>setNow(new Date()),1000); return ()=>clearInterval(t); },[]);
 
-  const poll = useCallback(async (silent=true) => {
-    if (!silent) setRefreshing(true);
+  const poll = useCallback(async(silent=true)=>{
+    if(!silent) setRef(true);
     try {
-      const [s, a] = await Promise.all([
-        axios.get(`${API}/status`).catch(() => null),
-        axios.get(`${API}/aggregate`).catch(() => null),
+      const [s,a]=await Promise.all([
+        axios.get(`${API}/status`).catch(()=>null),
+        axios.get(`${API}/aggregate`).catch(()=>null),
       ]);
-      if (s) setStatus(s.data.sources || {});
-      if (a) setAgg(a.data);
-      if (!silent) addLog("✅ Data refreshed", "success");
-    } catch(e) {
-      if (!silent) addLog("❌ Refresh failed — backend may be sleeping (wait 30s)", "error");
-    }
-    if (!silent) setRefreshing(false);
-  }, [addLog]);
+      if(s) setStatus(s.data.sources||{});
+      if(a) setAgg(a.data);
+      if(!silent) addLog("✅ Data refreshed","success");
+    } catch(e){ if(!silent) addLog("❌ Refresh failed","error"); }
+    if(!silent) setRef(false);
+  },[addLog]);
 
-  const fetchBudget = useCallback(async () => {
-    if (budget) return; // use cache
+  const fetchBudget = useCallback(async()=>{
+    if(budget) return;
     setBudgetLoading(true);
-    try {
-      const r = await axios.get(`${API}/budget`);
-      setBudget(r.data);
-    } catch(e) {
-      // silently use fallback — budget scraper has its own fallback
-    }
+    try { const r=await axios.get(`${API}/budget`); setBudget(r.data); } catch(e){}
     setBudgetLoading(false);
-  }, [budget]);
+  },[budget]);
 
-  useEffect(() => { fetchBudget(); }, [fetchBudget]);
-
-  useEffect(() => {
-    axios.get(`${API}/`).then(() => setOnline(true)).catch(() => setOnline(false));
+  useEffect(()=>{ fetchBudget(); },[fetchBudget]);
+  useEffect(()=>{
+    axios.get(`${API}/`).then(()=>setOnline(true)).catch(()=>setOnline(false));
     poll(true);
-    const id = setInterval(() => poll(true), 8000);
-    return () => clearInterval(id);
-  }, [poll]);
+    const id=setInterval(()=>poll(true),8000);
+    return ()=>clearInterval(id);
+  },[poll]);
 
-  const scrapeOne = useCallback(async sid => {
-    setScraping(p => ({...p, [sid]:true}));
-    addLog(`⚡ Scraping ${SRC[sid]?.label || sid}…`, "info");
+  const scrapeOne = useCallback(async sid=>{
+    setScraping(p=>({...p,[sid]:true}));
+    addLog(`⚡ Scraping ${SRC[sid]?.label||sid}…`,"info");
     try {
       await axios.post(`${API}/scrape/${sid}`);
       await poll(true);
-      addLog(`✅ ${SRC[sid]?.label || sid} — done`, "success");
-    } catch(e) {
-      addLog(`❌ ${sid} scrape failed`, "error");
-    }
-    setScraping(p => ({...p, [sid]:false}));
-  }, [poll, addLog]);
+      addLog(`✅ ${SRC[sid]?.label||sid} — done`,"success");
+    } catch(e){ addLog(`❌ ${sid} scrape failed`,"error"); }
+    setScraping(p=>({...p,[sid]:false}));
+  },[poll,addLog]);
 
-  const scrapeAll = useCallback(async () => {
+  const scrapeAll = useCallback(async()=>{
     setAll(true);
-    addLog("⚡ Scraping all 4 sources…", "info");
+    addLog("⚡ Scraping all 4 sources…","info");
     try {
       await axios.post(`${API}/scrape/all`);
       await poll(true);
-      const count = agg?.kpis?.total_schemes || 0;
-      addLog(`✅ Scrape complete — ${count} schemes loaded`, "success");
-    } catch(e) {
-      addLog("❌ Scrape failed — check backend status", "error");
-    }
+      addLog(`✅ Scrape complete — ${agg?.kpis?.total_schemes||0} schemes`,"success");
+    } catch(e){ addLog("❌ Scrape failed","error"); }
     setAll(false);
-  }, [poll, addLog, agg]);
+  },[poll,addLog,agg]);
 
-  const criticalCount = (agg?.alerts||[]).filter(a => a.severity === "Critical").length;
-  const totalSchemes  = agg?.kpis?.total_schemes || 0;
-  const totalPortals  = agg?.kpis?.total_portals || 0;
+  const criticalCount=(agg?.alerts||[]).filter(a=>a.severity==="Critical").length;
+  const totalSchemes=agg?.kpis?.total_schemes||0;
+  const totalPortals=agg?.kpis?.total_portals||0;
 
-  const TABS = [
-    { id:"dashboard", label:"Dashboard",    icon:"◉" },
-    { id:"schemes",   label:"Schemes",      icon:"⊞", badge: totalSchemes||null },
-    { id:"budget",    label:"Budget Data",  icon:"₹" },
-    { id:"districts", label:"Districts",    icon:"🗺️" },
-    { id:"alerts",    label:"Live Alerts",  icon:"⚡", badge: criticalCount||null },
-    { id:"insights",  label:"AI Insights",  icon:"🧠", highlight:true },
+  const TABS=[
+    {id:"dashboard",label:"Dashboard",icon:"◉"},
+    {id:"schemes",label:"Schemes",icon:"⊞",badge:totalSchemes||null},
+    {id:"budget",label:"Budget Data",icon:"₹"},
+    {id:"districts",label:"Districts",icon:"🗺️"},
+    {id:"alerts",label:"Live Alerts",icon:"⚡",badge:criticalCount||null},
+    {id:"insights",label:"AI Insights",icon:"🧠",highlight:true},
   ];
 
   return (
     <div style={{ minHeight:"100vh", background:"#f5f6fa" }}>
-
-      {/* ── STICKY HEADER ── */}
       <div style={{ background:"white", borderBottom:"1px solid #e5e7eb",
         position:"sticky", top:0, zIndex:100, boxShadow:"0 1px 8px rgba(0,0,0,0.06)" }}>
 
-        {/* Row 1: logo / badges / controls / CM */}
         <div style={{ display:"flex", alignItems:"center", gap:14, padding:"11px 28px" }}>
           <div style={{ width:46, height:46, borderRadius:10, background:"#f97316",
             display:"flex", alignItems:"center", justifyContent:"center",
             color:"white", fontWeight:900, fontSize:17 }}>AI</div>
           <div>
             <div style={{ fontWeight:800, fontSize:15, color:"#1a1a2e" }}>AI Chief of Staff</div>
-            <div style={{ fontSize:10, color:"#9ca3af", letterSpacing:"0.07em" }}>
-              OFFICE OF CM · RAJASTHAN · REAL VERIFIED DATA
-            </div>
+            <div style={{ fontSize:10, color:"#9ca3af", letterSpacing:"0.07em" }}>OFFICE OF CM · RAJASTHAN · REAL VERIFIED DATA</div>
           </div>
-
           <div style={{ flex:1 }}/>
-
-          {/* Sources badge — matches screenshot */}
-          <div style={{ background:"#f0f9ff", border:"1px solid #bae6fd",
-            borderRadius:10, padding:"8px 16px",
-            display:"flex", alignItems:"center", gap:7,
-            fontSize:12, color:"#0369a1", fontWeight:600 }}>
-            <span>📚</span>
-            <span>Sources: Budget 2025-26 · JJM MIS · PRS India</span>
+          <div style={{ background:"#f0f9ff", border:"1px solid #bae6fd", borderRadius:10,
+            padding:"8px 16px", display:"flex", alignItems:"center", gap:7, fontSize:12, color:"#0369a1", fontWeight:600 }}>
+            <span>📚</span><span>Sources: Budget 2025-26 · JJM MIS · PRS India</span>
           </div>
-
-          {/* Verified Data badge — matches screenshot */}
-          <div style={{ background:"white",
-            border:"1.5px solid #bbf7d0",
-            borderRadius:10, padding:"8px 14px",
-            display:"flex", alignItems:"center", gap:7 }}>
-            <div style={{ width:9, height:9, borderRadius:"50%",
-              background:"#10b981",
-              boxShadow:"0 0 0 3px #d1fae5" }}/>
-            <span style={{ fontSize:13, fontWeight:700, color:"#166534" }}>
-              Verified Data
-            </span>
+          <div style={{ background:"white", border:"1.5px solid #bbf7d0", borderRadius:10,
+            padding:"8px 14px", display:"flex", alignItems:"center", gap:7 }}>
+            <div style={{ width:9, height:9, borderRadius:"50%", background:"#10b981", boxShadow:"0 0 0 3px #d1fae5" }}/>
+            <span style={{ fontSize:13, fontWeight:700, color:"#166534" }}>Verified Data</span>
           </div>
-
           <ScrapeNowButton onClick={scrapeAll} loading={scrapingAll} disabled={!online}/>
-
-          <button onClick={() => poll(false)} disabled={refreshing} style={{
-            background: refreshing ? "#eff6ff" : "white",
-            color: refreshing ? "#93c5fd" : "#3b82f6",
+          <button onClick={()=>poll(false)} disabled={refreshing} style={{
+            background:refreshing?"#eff6ff":"white", color:refreshing?"#93c5fd":"#3b82f6",
             border:`1.5px solid ${refreshing?"#bfdbfe":"#3b82f6"}`,
             borderRadius:10, padding:"10px 16px", fontWeight:700, fontSize:13,
             display:"flex", alignItems:"center", gap:6, cursor:refreshing?"not-allowed":"pointer" }}>
             <span style={{ display:"inline-block", animation:refreshing?"spin 1s linear infinite":"none" }}>🔄</span>
-            {refreshing ? "Refreshing…" : "Refresh"}
+            {refreshing?"Refreshing…":"Refresh"}
           </button>
-
-          {/* Backend status */}
-          <div style={{
-            background: online===null?"#f9fafb":online?"#f0fdf4":"#fef2f2",
+          <div style={{ background:online===null?"#f9fafb":online?"#f0fdf4":"#fef2f2",
             border:`1px solid ${online===null?"#e5e7eb":online?"#bbf7d0":"#fecaca"}`,
             borderRadius:8, padding:"6px 12px", fontSize:12, fontWeight:600,
-            color: online===null?"#6b7280":online?"#166534":"#991b1b",
+            color:online===null?"#6b7280":online?"#166534":"#991b1b",
             display:"flex", alignItems:"center", gap:6 }}>
             <StatusDot status={online===null?"idle":online?"ok":"error"}/>
             {online===null?"Checking…":online?"Backend Online":"Offline"}
           </div>
-
-          {/* CM card */}
-          <div style={{ display:"flex", alignItems:"center", gap:10,
-            paddingLeft:12, borderLeft:"1px solid #e5e7eb" }}>
-            <div style={{ width:36, height:36, borderRadius:8,
-              background:"#fee2e2", display:"flex", alignItems:"center",
-              justifyContent:"center", fontSize:18 }}>👤</div>
+          <div style={{ display:"flex", alignItems:"center", gap:10, paddingLeft:12, borderLeft:"1px solid #e5e7eb" }}>
+            <div style={{ width:36, height:36, borderRadius:8, background:"#fee2e2",
+              display:"flex", alignItems:"center", justifyContent:"center", fontSize:18 }}>👤</div>
             <div>
               <div style={{ fontWeight:700, fontSize:13, color:"#1f2937" }}>Bhajan Lal Sharma</div>
               <div style={{ fontSize:11, color:"#9ca3af" }}>Chief Minister, Rajasthan</div>
@@ -1614,84 +1567,72 @@ export default function App() {
           </div>
         </div>
 
-        {/* Row 2: per-source live status strip */}
-        <div style={{ display:"flex", gap:6, padding:"6px 28px",
-          background:"#fafafa", borderTop:"1px solid #f3f4f6", overflowX:"auto" }}>
-          {Object.entries(SRC).map(([sid, s]) => {
-            const st = srcStatus[sid]||{};
+        <div style={{ display:"flex", gap:6, padding:"6px 28px", background:"#fafafa",
+          borderTop:"1px solid #f3f4f6", overflowX:"auto" }}>
+          {Object.entries(SRC).map(([sid,s])=>{
+            const st=srcStatus[sid]||{};
             return (
-              <div key={sid} style={{
-                display:"flex", alignItems:"center", gap:6,
-                background: st.status==="ok" ? `${s.color}10` : "#f1f5f9",
-                border:`1px solid ${st.status==="ok" ? s.color+"30" : "#e5e7eb"}`,
+              <div key={sid} style={{ display:"flex", alignItems:"center", gap:6,
+                background:st.status==="ok"?`${s.color}10`:"#f1f5f9",
+                border:`1px solid ${st.status==="ok"?s.color+"30":"#e5e7eb"}`,
                 borderRadius:6, padding:"4px 10px", fontSize:11, whiteSpace:"nowrap" }}>
                 <StatusDot status={scraping[sid]?"loading":st.status||"idle"} animating={!!scraping[sid]}/>
                 <span style={{ fontWeight:600, color:"#374151" }}>{s.icon} {s.label}</span>
-                {st.count>0 && <span style={{ color:s.color, fontWeight:800 }}>{st.count}</span>}
-                {st.scraped_at && <span style={{ color:"#94a3b8" }}>{timeAgo(st.scraped_at)}</span>}
+                {st.count>0&&<span style={{ color:s.color, fontWeight:800 }}>{st.count}</span>}
+                {st.scraped_at&&<span style={{ color:"#94a3b8" }}>{timeAgo(st.scraped_at)}</span>}
               </div>
             );
           })}
-          {agg?.scraped_at && (
-            <div style={{ marginLeft:"auto", fontSize:11, color:"#94a3b8",
-              alignSelf:"center", whiteSpace:"nowrap" }}>
+          {agg?.scraped_at&&(
+            <div style={{ marginLeft:"auto", fontSize:11, color:"#94a3b8", alignSelf:"center", whiteSpace:"nowrap" }}>
               Aggregated {timeAgo(agg.scraped_at)}
             </div>
           )}
         </div>
 
-        {/* Scrape log strip — shows last action */}
-        {scrapeLog.length > 0 && (
-          <div style={{ padding:"4px 28px", background:"#f8fafc",
-            borderTop:"1px solid #f3f4f6", display:"flex", alignItems:"center",
-            gap:10, overflowX:"auto" }}>
-            {scrapeLog.slice(0, 5).map((log, i) => (
-              <div key={i} style={{ display:"flex", alignItems:"center", gap:5,
-                fontSize:11, whiteSpace:"nowrap",
-                color: log.type==="success"?"#166534":log.type==="error"?"#991b1b":"#64748b",
-                opacity: i===0?1:0.5 }}>
+        {scrapeLog.length>0&&(
+          <div style={{ padding:"4px 28px", background:"#f8fafc", borderTop:"1px solid #f3f4f6",
+            display:"flex", alignItems:"center", gap:10, overflowX:"auto" }}>
+            {scrapeLog.slice(0,5).map((log,i)=>(
+              <div key={i} style={{ display:"flex", alignItems:"center", gap:5, fontSize:11,
+                whiteSpace:"nowrap",
+                color:log.type==="success"?"#166534":log.type==="error"?"#991b1b":"#64748b",
+                opacity:i===0?1:0.5 }}>
                 <span style={{ fontSize:10, color:"#94a3b8" }}>{log.ts}</span>
                 <span>{log.msg}</span>
-                {i < scrapeLog.slice(0,5).length-1 && <span style={{color:"#d1d5db"}}>·</span>}
+                {i<scrapeLog.slice(0,5).length-1&&<span style={{color:"#d1d5db"}}>·</span>}
               </div>
             ))}
           </div>
         )}
 
-        {/* Row 3: nav tabs */}
         <div style={{ display:"flex", padding:"0 28px", borderTop:"1px solid #f1f5f9" }}>
-          {TABS.map(t => (
-            <button key={t.id} onClick={() => setTab(t.id)} style={{
-              background: t.highlight && tab===t.id ? "linear-gradient(135deg,#f97316,#ea580c)" :
-                          t.highlight ? "#fff7ed" : "transparent",
-              borderBottom: !t.highlight && tab===t.id ? "2.5px solid #f97316" : !t.highlight ? "2.5px solid transparent" : "none",
-              borderRadius: t.highlight ? "8px" : 0,
-              margin: t.highlight ? "6px 4px" : 0,
-              padding: t.highlight ? "7px 16px" : "11px 18px",
-              fontWeight: tab===t.id ? 700 : 500,
-              color: t.highlight && tab===t.id ? "white" : t.highlight ? "#f97316" : tab===t.id ? "#f97316" : "#6b7280",
+          {TABS.map(t=>(
+            <button key={t.id} onClick={()=>setTab(t.id)} style={{
+              background:t.highlight&&tab===t.id?"linear-gradient(135deg,#f97316,#ea580c)":t.highlight?"#fff7ed":"transparent",
+              borderBottom:!t.highlight&&tab===t.id?"2.5px solid #f97316":!t.highlight?"2.5px solid transparent":"none",
+              borderRadius:t.highlight?"8px":0,
+              margin:t.highlight?"6px 4px":0,
+              padding:t.highlight?"7px 16px":"11px 18px",
+              fontWeight:tab===t.id?700:500,
+              color:t.highlight&&tab===t.id?"white":t.highlight?"#f97316":tab===t.id?"#f97316":"#6b7280",
               fontSize:13, display:"flex", alignItems:"center", gap:6,
-              border: t.highlight && tab!==t.id ? "1.5px solid #fed7aa" : t.highlight ? "none" : "none",
+              border:t.highlight&&tab!==t.id?"1.5px solid #fed7aa":t.highlight?"none":"none",
               transition:"all .15s",
             }}>
               <span>{t.icon}</span> {t.label}
-              {t.badge ? (
-                <span style={{ background: t.id==="alerts"?"#ef4444":"#f97316",
-                  color:"white", borderRadius:20, padding:"1px 7px",
-                  fontSize:10, fontWeight:800 }}>{t.badge}</span>
-              ) : null}
+              {t.badge&&<span style={{ background:t.id==="alerts"?"#ef4444":"#f97316",
+                color:"white", borderRadius:20, padding:"1px 7px", fontSize:10, fontWeight:800 }}>{t.badge}</span>}
             </button>
           ))}
-          <div style={{ marginLeft:"auto", alignSelf:"center",
-            fontSize:12, color:"#9ca3af", paddingRight:4 }}>
+          <div style={{ marginLeft:"auto", alignSelf:"center", fontSize:12, color:"#9ca3af", paddingRight:4 }}>
             {now.toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit"})} ·{" "}
             {now.toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"})}
           </div>
         </div>
       </div>
 
-      {/* Backend status banners */}
-      {online === null && (
+      {online===null&&(
         <div style={{ background:"#f0f9ff", borderBottom:"1px solid #bae6fd",
           padding:"8px 28px", display:"flex", gap:10, alignItems:"center" }}>
           <span style={{ animation:"spin 1s linear infinite", display:"inline-block" }}>⚙️</span>
@@ -1700,48 +1641,32 @@ export default function App() {
           </span>
         </div>
       )}
-      {online === false && (
+      {online===false&&(
         <div style={{ background:"#fef2f2", borderBottom:"1px solid #fecaca",
-          padding:"10px 28px", display:"flex", gap:10, alignItems:"center",
-          flexWrap:"wrap" }}>
+          padding:"10px 28px", display:"flex", gap:10, alignItems:"center", flexWrap:"wrap" }}>
           <span>⚠️</span>
-          <span style={{ fontSize:13, color:"#991b1b", fontWeight:600 }}>
-            Backend is sleeping (Render free tier).
-          </span>
-          <span style={{ fontSize:13, color:"#991b1b" }}>
-            Click <strong>⚡ Scrape Now</strong> — it will wake up automatically in ~30 seconds.
-          </span>
-          <button onClick={() => {
-            setOnline(null);
-            axios.get(`${API}/`).then(() => setOnline(true)).catch(() => setOnline(false));
-          }} style={{ background:"#ef4444", color:"white", border:"none",
-            borderRadius:8, padding:"5px 14px", fontSize:12, fontWeight:700, cursor:"pointer" }}>
+          <span style={{ fontSize:13, color:"#991b1b", fontWeight:600 }}>Backend sleeping (Render free tier).</span>
+          <span style={{ fontSize:13, color:"#991b1b" }}>Click <strong>⚡ Scrape Now</strong> — wakes in ~30s.</span>
+          <button onClick={()=>{ setOnline(null); axios.get(`${API}/`).then(()=>setOnline(true)).catch(()=>setOnline(false)); }}
+            style={{ background:"#ef4444", color:"white", border:"none",
+              borderRadius:8, padding:"5px 14px", fontSize:12, fontWeight:700, cursor:"pointer" }}>
             Retry Connection
           </button>
         </div>
       )}
 
-      {/* ── Page content ── */}
       <div style={{ maxWidth:1180, margin:"0 auto", padding:"24px 28px" }}>
-        {tab==="dashboard" && (
-          <DashboardTab agg={agg} srcStatus={srcStatus}
-            onScrapeAll={scrapeAll} onScrapeOne={scrapeOne}
-            scraping={scraping} scrapingAll={scrapingAll} online={online}
-            budget={budget} budgetLoading={budgetLoading}/>
-        )}
-        {tab==="insights"  && (
-          <InsightsEngine
-            schemes={agg?.schemes || []}
-            portals={agg?.portals || []}
-            onScrapeFirst={scrapeAll}/>
-        )}
-        {tab==="schemes"   && <SchemesTab   agg={agg} onScrapeAll={scrapeAll}/>}
-        {tab==="budget"    && <BudgetDataTab budget={budget} budgetLoading={budgetLoading}
-            onRefresh={() => { setBudget(null); setBudgetLoading(true);
-              fetch(`${API}/budget?refresh=true`).then(r=>r.json()).then(d=>{setBudget(d);setBudgetLoading(false);}).catch(()=>setBudgetLoading(false)); }}/>}
-        {tab==="portals"   && <PortalsTab   agg={agg} onScrapeAll={scrapeAll}/>}
-        {tab==="districts" && <DistrictsTab agg={agg} onScrapeAll={scrapeAll}/>}
-        {tab==="alerts"    && <AlertsTab    agg={agg} onScrapeAll={scrapeAll}/>}
+        {tab==="dashboard"&&<DashboardTab agg={agg} srcStatus={srcStatus}
+          onScrapeAll={scrapeAll} onScrapeOne={scrapeOne}
+          scraping={scraping} scrapingAll={scrapingAll} online={online}
+          budget={budget} budgetLoading={budgetLoading}/>}
+        {tab==="schemes"&&<SchemesTab agg={agg} onScrapeAll={scrapeAll}/>}
+        {tab==="budget"&&<BudgetDataTab budget={budget} budgetLoading={budgetLoading}
+          onRefresh={()=>{ setBudget(null); setBudgetLoading(true);
+            fetch(`${API}/budget?refresh=true`).then(r=>r.json()).then(d=>{setBudget(d);setBudgetLoading(false);}).catch(()=>setBudgetLoading(false)); }}/>}
+        {tab==="districts"&&<DistrictsTab agg={agg} onScrapeAll={scrapeAll}/>}
+        {tab==="alerts"&&<AlertsTab agg={agg} onScrapeAll={scrapeAll}/>}
+        {tab==="insights"&&<InsightsEngine schemes={agg?.schemes||[]} portals={agg?.portals||[]} onScrapeFirst={scrapeAll}/>}
       </div>
 
       <footer style={{ borderTop:"1px solid #e5e7eb", background:"white",

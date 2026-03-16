@@ -244,57 +244,77 @@ BUDGET_FALLBACK = {
     "source_url":               "https://prsindia.org/budgets/states/rajasthan-budget-analysis-2025-26",
 }
 
-# Historical trend data for sparklines (verified from successive budget docs)
-SPARKLINE_DATA = {
-    "health_cr":       [18200, 21300, 23100, 25400, 27200, 28865],
-    "education_pct":   [15.2,  15.8,  16.1,  16.9,  17.4,  18.0],
-    "jjm_coverage_pct":[12.5,  28.3,  41.2,  49.8,  53.1,  55.36],
-    "fiscal_deficit_pct":[3.8,  4.1,  3.6,   3.9,   4.0,   4.25],
-    "capital_outlay_cr":[22000,28000,32000,  38000,  45000, 53686],
-    "social_security_cr":[6000, 8000, 9500,  11000,  12800, 14000],
-}
+# ── Sparklines and JJM districts are now LIVE-scraped ─────────────────────────
+# SPARKLINE_DATA and JJM district arrays were previously hardcoded here.
+# They are now fetched by sparkline_scraper.py and jjm_scraper.py respectively.
+# This file keeps only the budget figure fallbacks.
 
 
 def scrape_budget():
     """
-    Main entry point. Tries live scraping first, falls back to verified data.
-    Returns structured budget dict.
+    Main entry point. Scrapes budget figures, then calls sparkline_scraper
+    and jjm_scraper for live trend data and district coverage.
+    Falls back to verified data for any field that fails to scrape.
     """
     ts = datetime.now(timezone.utc).isoformat()
-    log.info("Starting budget scrape...")
+    log.info("Starting budget scrape (figures + sparklines + JJM districts)...")
 
-    # Try all sources
-    prs_data     = _scrape_prs()
-    fin_data     = _scrape_finance_raj()
-    jjm_data     = _scrape_jjm()
-    rajras_data  = _scrape_rajras_budget()
+    # ── 1. Scrape budget figures ──────────────────────────────────────────────
+    prs_data    = _scrape_prs()
+    fin_data    = _scrape_finance_raj()
+    rajras_data = _scrape_rajras_budget()
 
-    # Merge scraped data, prioritising live over fallback
+    # ── 2. Scrape JJM districts (live from ejalshakti.gov.in) ────────────────
+    from scrapers.jjm_scraper import scrape_jjm
+    jjm_districts = scrape_jjm()
+    # Extract state-level coverage from districts
+    live_districts = [d for d in jjm_districts if d.get("coverage") is not None]
+    jjm_state_pct  = (sum(d["coverage"] for d in live_districts) / len(live_districts)
+                      if live_districts else None)
+
+    # ── 3. Scrape sparklines (live from PRS India year-by-year) ──────────────
+    from scrapers.sparkline_scraper import scrape_sparklines
+    sparkline_result = scrape_sparklines(current_jjm_pct=jjm_state_pct)
+
+    # ── 4. Merge budget figures ───────────────────────────────────────────────
     merged = dict(BUDGET_FALLBACK)
-    merged["scraped_at"]  = ts
-    merged["sparklines"]  = SPARKLINE_DATA
+    merged["scraped_at"] = ts
 
     scraped_fields = 0
-
     for src in [prs_data, fin_data, rajras_data]:
         for k, v in src.items():
             if v is not None and k in merged:
                 merged[k] = v
                 scraped_fields += 1
 
-    if jjm_data.get("rajasthan_coverage_pct"):
-        merged["jjm_coverage_pct"] = jjm_data["rajasthan_coverage_pct"]
-        merged["jjm_source_url"]   = jjm_data.get("source_url","")
+    # Use live JJM state average if available
+    if jjm_state_pct is not None:
+        merged["jjm_coverage_pct"] = round(jjm_state_pct, 2)
         scraped_fields += 1
 
-    # Compute derived fields
+    # ── 5. Attach live sparklines ─────────────────────────────────────────────
+    merged["sparklines"]     = sparkline_result["sparklines"]
+    merged["sparkline_meta"] = {
+        "live_years":   sparkline_result["live_years"],
+        "total_years":  sparkline_result["total_years"],
+        "note":         sparkline_result["note"],
+        "source":       sparkline_result["source"],
+    }
+
+    # ── 6. Attach live JJM districts ─────────────────────────────────────────
+    merged["jjm_districts"]   = jjm_districts
+    merged["jjm_districts_live"] = any(d.get("live") for d in jjm_districts)
+
+    # ── 7. Compute derived fields ─────────────────────────────────────────────
     if merged.get("total_expenditure_cr") and not merged.get("education_cr"):
-        merged["education_cr"] = round(merged["total_expenditure_cr"] * merged.get("education_pct", 18) / 100)
+        merged["education_cr"] = round(
+            merged["total_expenditure_cr"] * merged.get("education_pct", 18) / 100)
 
     if merged.get("total_expenditure_cr") and merged.get("health_cr"):
-        merged["health_pct"] = round(merged["health_cr"] / merged["total_expenditure_cr"] * 100, 1)
+        merged["health_pct"] = round(
+            merged["health_cr"] / merged["total_expenditure_cr"] * 100, 1)
 
-    # Format display values
+    # ── 8. Format display values ──────────────────────────────────────────────
     def fmt_cr(v):
         if v is None: return "N/A"
         if v >= 100000: return f"₹{v/100000:.1f} L Cr"
@@ -313,19 +333,30 @@ def scrape_budget():
         "gsdp":               fmt_cr(merged.get("gsdp_cr")),
     }
 
-    live_sources = sum([
-        1 if prs_data else 0,
-        1 if jjm_data else 0,
-        1 if fin_data else 0,
+    live_figure_sources = sum([
+        1 if prs_data    else 0,
+        1 if fin_data    else 0,
         1 if rajras_data else 0,
     ])
 
     merged["scrape_meta"] = {
-        "live_sources": live_sources,
-        "scraped_fields": scraped_fields,
-        "fallback_used": scraped_fields == 0,
-        "note": "Live data" if scraped_fields > 0 else "Verified fallback (Budget 2025-26 official documents)",
+        "live_sources":     live_figure_sources,
+        "scraped_fields":   scraped_fields,
+        "fallback_used":    scraped_fields == 0,
+        "jjm_districts_live": merged["jjm_districts_live"],
+        "sparkline_live_years": sparkline_result["live_years"],
+        "note": (
+            f"Live: {live_figure_sources} budget sources, "
+            f"{sparkline_result['live_years']}/{sparkline_result['total_years']} sparkline years, "
+            f"JJM {'live' if merged['jjm_districts_live'] else 'fallback'}"
+        ),
     }
 
-    log.info("Budget scrape complete: %d live fields, %d sources", scraped_fields, live_sources)
+    log.info(
+        "Budget complete: %d figure fields, %d/%d sparkline years, JJM %s, %d districts",
+        scraped_fields,
+        sparkline_result["live_years"], sparkline_result["total_years"],
+        "live" if merged["jjm_districts_live"] else "fallback",
+        len(jjm_districts),
+    )
     return merged

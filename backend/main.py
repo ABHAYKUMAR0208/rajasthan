@@ -14,9 +14,33 @@ from scrapers.rajras_scraper     import scrape_rajras
 from scrapers.jansoochna_scraper import scrape_jansoochna
 from scrapers.myscheme_scraper   import scrape_myscheme
 from scrapers.budget_scraper     import scrape_budget
+from scrapers.jjm_scraper        import scrape_jjm
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s — %(message)s")
 log = logging.getLogger("api")
+
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def lifespan(app_: FastAPI):
+    """Auto-scrape all sources + JJM districts on startup."""
+    log.info("🚀 Startup: kicking off background scrape of all sources + JJM districts...")
+    asyncio.create_task(asyncio.gather(*[_run(sid, fn) for sid, fn in SCRAPERS.items()]))
+
+    async def _fetch_jjm_startup():
+        data = await asyncio.to_thread(scrape_jjm)
+        _cache[JJM_CACHE_KEY] = {
+            "data": data,
+            "live": any(d.get("live") for d in data),
+            "scraped_at": data[0].get("scraped_at") if data else None,
+        }
+        log.info("✅ JJM startup: %d districts", len(data))
+
+    asyncio.create_task(_fetch_jjm_startup())
+    yield
+
+app = FastAPI(title="Rajasthan Dashboard API v3", lifespan=lifespan)
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 _cache: dict = {}
 SCRAPERS = {
@@ -26,6 +50,7 @@ SCRAPERS = {
     "myscheme":   scrape_myscheme,
 }
 BUDGET_CACHE_KEY = "budget"
+JJM_CACHE_KEY    = "jjm"
 
 # ── scrape helpers ─────────────────────────────────────────────────────────────
 def _store(sid, data, status="ok", error=""):
@@ -47,27 +72,6 @@ async def _run(sid, fn):
         log.error("❌ %s: %s", sid, e)
         _store(sid, [], "error", str(e))
     return _cache[sid]
-
-from contextlib import asynccontextmanager
-
-@asynccontextmanager
-async def lifespan(app):
-    """Auto-scrape all sources on startup so cache is never empty."""
-    log.info("Startup: pre-loading all scrapers in background…")
-    async def _bg():
-        await asyncio.gather(
-            _run("rajras",     scrape_rajras),
-            _run("jansoochna", scrape_jansoochna),
-            _run("myscheme",   scrape_myscheme),
-            _run("igod",       scrape_igod),
-            return_exceptions=True,
-        )
-        log.info("Startup scraping complete")
-    asyncio.create_task(_bg())
-    yield
-
-app = FastAPI(title="Rajasthan Dashboard API v3", lifespan=lifespan)
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 # ── routes ─────────────────────────────────────────────────────────────────────
 @app.get("/")
@@ -184,15 +188,20 @@ def aggregate():
         for sid in SCRAPERS
     }
 
+    # Attach live JJM districts if available in cache
+    jjm_cache    = _cache.get(JJM_CACHE_KEY, {})
+    jjm_districts = jjm_cache.get("data", [])
+
     return {
-        "scraped_at":    datetime.utcnow().isoformat() + "Z",
-        "kpis":          kpis,
-        "schemes":       schemes,
-        "portals":       portals,
-        "categories":    categories,
-        "source_counts": source_counts,
-        "alerts":        alerts,
-        "source_status": source_status,
+        "scraped_at":     datetime.utcnow().isoformat() + "Z",
+        "kpis":           kpis,
+        "schemes":        schemes,
+        "portals":        portals,
+        "categories":     categories,
+        "source_counts":  source_counts,
+        "alerts":         alerts,
+        "source_status":  source_status,
+        "jjm_districts":  jjm_districts,
     }
 
 
@@ -459,10 +468,34 @@ async def get_budget(refresh: bool = False):
 
 @app.post("/scrape/budget")
 async def scrape_budget_endpoint():
-    """Force-refresh budget data."""
+    """Force-refresh budget data (includes sparklines + JJM districts)."""
     data = await asyncio.to_thread(scrape_budget)
     _cache[BUDGET_CACHE_KEY] = data
+    # Also update JJM cache from budget result
+    if "jjm_districts" in data:
+        _cache[JJM_CACHE_KEY] = {
+            "data": data["jjm_districts"],
+            "live": data.get("jjm_districts_live", False),
+            "scraped_at": data.get("scraped_at"),
+        }
     return {"status": "ok", "fields": len(data)}
+
+@app.get("/jjm")
+async def get_jjm(refresh: bool = False):
+    """
+    Returns live JJM district coverage data for all 33 Rajasthan districts.
+    Scraped from ejalshakti.gov.in. Cached for 6 hours.
+    """
+    if not refresh and JJM_CACHE_KEY in _cache:
+        cached = _cache[JJM_CACHE_KEY]
+        return cached
+    data = await asyncio.to_thread(scrape_jjm)
+    _cache[JJM_CACHE_KEY] = {
+        "data": data,
+        "live": any(d.get("live") for d in data),
+        "scraped_at": data[0].get("scraped_at") if data else None,
+    }
+    return _cache[JJM_CACHE_KEY]
 
 
 def _latest_scraped(items):
