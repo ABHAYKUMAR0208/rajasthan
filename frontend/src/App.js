@@ -569,7 +569,7 @@ function PortalsTab({ agg, onScrapeAll }) {
   const { portals } = agg;
 
   // Group by category — derived from scraped category field
-  const groups: Record<string, any[]> = {};
+  const groups = {};
   portals.forEach(p => {
     const c = p.category || "General";
     if (!groups[c]) groups[c] = [];
