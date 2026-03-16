@@ -313,11 +313,8 @@ function SchemeDetailPanel({ scheme, onClose }) {
   // BUG FIX 2: Use resolveSchemeUrl for specific scheme page
   const sourceUrl = resolveSchemeUrl(scheme);
 
-  // Use backend-parsed fields: budget_amount parsed from benefit text, beneficiary_display from count/eligibility
-  const beneficiaries = scheme.beneficiary_display
-    || (scheme.beneficiary_count ? String(scheme.beneficiary_count) : null)
-    || null;
-  const budget = scheme.budget_amount || null;
+  const beneficiaries = scheme.beneficiary_count || scheme.beneficiaries || "Open to all";
+  const budget        = scheme.budget || "As per allocation";
   const launchYear    = scheme.launched
     ? String(scheme.launched).match(/\d{4}/)?.[0] || scheme.launched
     : (scheme.scraped_at?.slice(0,4) || "—");
@@ -377,15 +374,13 @@ function SchemeDetailPanel({ scheme, onClose }) {
         <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", borderBottom:"1px solid #f0f2f5" }}>
           <div style={{ padding:"18px 24px", borderRight:"1px solid #f0f2f5" }}>
             <Label>Beneficiaries</Label>
-            {beneficiaries
-              ? <div style={{ fontSize:20, fontWeight:800, color:srcMeta.color }}>{beneficiaries}</div>
-              : <div style={{ fontSize:14, color:"#d1d5db", fontWeight:500 }}>Not specified</div>}
+            <div style={{ fontSize:20, fontWeight:800, color:srcMeta.color }}>
+              {typeof beneficiaries==="number"?beneficiaries.toLocaleString("en-IN"):beneficiaries}
+            </div>
           </div>
           <div style={{ padding:"18px 24px" }}>
-            <Label>Benefit Amount</Label>
-            {budget
-              ? <div style={{ fontSize:20, fontWeight:800, color:"#111827" }}>{budget}</div>
-              : <div style={{ fontSize:14, color:"#d1d5db", fontWeight:500 }}>See description</div>}
+            <Label>Budget (2025-26)</Label>
+            <div style={{ fontSize:20, fontWeight:800, color:"#111827" }}>{budget}</div>
           </div>
         </div>
 
@@ -512,10 +507,8 @@ function SchemeDetailPanel({ scheme, onClose }) {
       ? `https://jansoochna.rajasthan.gov.in/Scheme`
       : `https://${srcMeta.url}`);
 
-  const beneficiaries = scheme.beneficiary_display
-    || (scheme.beneficiary_count ? String(scheme.beneficiary_count) : null)
-    || null;
-  const budget = scheme.budget_amount || null;
+  const beneficiaries = scheme.beneficiary_count || scheme.beneficiaries || "Open to all";
+  const budget        = scheme.budget || "As per govt allocation";
   const launchYear    = scheme.launched
     ? String(scheme.launched).match(/\d{4}/)?.[0] || scheme.launched
     : scheme.scraped_at?.slice(0, 4) || "—";
@@ -911,8 +904,8 @@ function SchemesTab({ agg, onScrapeAll }) {
               <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr",
                 gap:4, marginBottom:10 }}>
                 {[
-                  { label:"BENEFICIARIES", val:scheme.beneficiary_display||(scheme.beneficiary_count?String(scheme.beneficiary_count):null), color:srcMeta.color },
-                  { label:"BUDGET",        val:scheme.budget_amount||null,                           color:"#1f2937" },
+                  { label:"BENEFICIARIES", val:scheme.beneficiary_count||scheme.beneficiaries||null, color:srcMeta.color },
+                  { label:"BUDGET",        val:scheme.budget||null,                                  color:"#1f2937" },
                   { label:"PROGRESS",      val:scheme.progress||(scheme.progress_pct!=null?`${scheme.progress_pct}%`:null), color:"#10b981" },
                 ].map((stat,j) => (
                   <div key={j}>
