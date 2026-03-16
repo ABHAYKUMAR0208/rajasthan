@@ -116,6 +116,113 @@ def get_data(source_id: str, limit: Optional[int] = None):
 def get_all():
     return {sid: _cache.get(sid, {"status": "not_scraped", "data": [], "count": 0}) for sid in SCRAPERS}
 
+# ── Scheme enrichment helpers ──────────────────────────────────────────────────
+
+def _extract_budget_amount(benefit_text, description=""):
+    """
+    Parse a concise budget/benefit amount from scraped benefit or description text.
+    Returns strings like '₹2,500/mo', '₹25.0 L/yr', '100 days/yr', 'Free Medicines'.
+    Returns None if no meaningful amount found.
+    """
+    text = str(benefit_text or description or "").strip()
+    if not text:
+        return None
+
+    # ₹ / Rs. amount
+    m = re.search(
+        r'(?:₹|Rs\.?|INR)\s*([\d,]+(?:\.\d+)?)\s*(lakh\s*crore|lakh|crore|cr\.?)?',
+        text, re.I
+    )
+    if m:
+        raw  = m.group(1).replace(",", "")
+        unit = (m.group(2) or "").strip().lower()
+        try:
+            val = float(raw)
+        except ValueError:
+            return None
+
+        if "lakh crore" in unit:  display = f"₹{val} L Cr"
+        elif unit == "lakh":       display = f"₹{val} L"
+        elif "crore" in unit or unit == "cr": display = f"₹{val} Cr"
+        else:
+            if val >= 10_000_000:  display = f"₹{val/10_000_000:.1f} Cr"
+            elif val >= 1_00_000:  display = f"₹{val/1_00_000:.1f} L"
+            else:                  display = f"₹{int(val):,}"
+
+        end = m.end()
+        ctx = text[end:end + 25].lower()
+        if re.search(r'per\s*year|/year|/yr|per\s*annum|annually', ctx):
+            display += "/yr"
+        elif re.search(r'per\s*month|/month|/mo|monthly', ctx):
+            display += "/mo"
+        return display
+
+    # "X days/year" (MGNREGA-style)
+    m2 = re.search(r'(\d+)\s*days?\s*/?\s*(?:year|yr)', text, re.I)
+    if m2:
+        return f"{m2.group(1)} days/yr"
+
+    # "free <specific thing>" — strict whitelist to avoid "tax-free" etc.
+    m3 = re.search(
+        r'(?<![a-zA-Z\-])free\s+'
+        r'(medicine|medicines|lpg|gas\s*connection|electricity|meals?|food|coaching|treatment|health\s*care)',
+        text, re.I
+    )
+    if m3:
+        return f"Free {m3.group(1).title()}"
+
+    return None
+
+
+def _format_beneficiaries(beneficiary_count, eligibility="", description=""):
+    """
+    Return a short, human-readable beneficiary string from scraped fields.
+    e.g. "12.0 L", "SC/ST students", "All Rajasthan families"
+    """
+    # Jan Soochna: beneficiary_count is a raw integer
+    if beneficiary_count:
+        s = str(beneficiary_count).strip().replace(",", "")
+        try:
+            n = int(float(s))
+            if n >= 10_000_000: return f"{n/10_000_000:.1f} Cr"
+            if n >= 1_00_000:   return f"{n/1_00_000:.1f} L"
+            if n >= 1_000:      return f"{n/1_000:.0f}K"
+            return str(n)
+        except ValueError:
+            if s:
+                return s[:30]
+
+    # Try to extract a short phrase from eligibility
+    for src in [eligibility, description]:
+        if not src:
+            continue
+        src = str(src).strip()
+        # Take up to first sentence break if short enough
+        first = re.split(r'[.;\n]', src)[0].strip()
+        if 4 <= len(first) <= 50:
+            return first[:50]
+
+    return None
+
+
+def _enrich_scheme(s):
+    """Add budget_amount and beneficiary_display to a scheme dict."""
+    budget_amount = _extract_budget_amount(
+        s.get("benefit", "") or s.get("benefits", ""),
+        s.get("description", "")
+    )
+    beneficiary_display = _format_beneficiaries(
+        s.get("beneficiary_count") or s.get("beneficiaries"),
+        s.get("eligibility", ""),
+        s.get("description", ""),
+    )
+    return {
+        **s,
+        "budget_amount":        budget_amount,
+        "beneficiary_display":  beneficiary_display,
+    }
+
+
 # ── aggregate ──────────────────────────────────────────────────────────────────
 @app.get("/aggregate")
 def aggregate():
@@ -129,13 +236,18 @@ def aggregate():
     jsp_raw   = _cache.get("jansoochna",  {}).get("data", [])
     ms_raw    = _cache.get("myscheme",    {}).get("data", [])
 
-    # ── 1. Schemes (rajras + jansoochna + myscheme) ────────────────────────────
-    # Tag each item with its source so the frontend can label/color it
-    schemes = (
-        [{**s, "_src": "rajras",     "_src_label": "RajRAS",      "_src_url": "rajras.in"}        for s in rr_raw]  +
-        [{**s, "_src": "jansoochna", "_src_label": "Jan Soochna", "_src_url": "jansoochna.rajasthan.gov.in"} for s in jsp_raw] +
-        [{**s, "_src": "myscheme",   "_src_label": "MyScheme",    "_src_url": "myscheme.gov.in"}   for s in ms_raw]
-    )
+    # ── 1. Schemes — tag source then enrich with parsed budget/beneficiary fields
+    schemes = [
+        _enrich_scheme({**s, "_src": "rajras",     "_src_label": "RajRAS",      "_src_url": "rajras.in"})
+        for s in rr_raw
+    ] + [
+        _enrich_scheme({**s, "_src": "jansoochna", "_src_label": "Jan Soochna", "_src_url": "jansoochna.rajasthan.gov.in"})
+        for s in jsp_raw
+    ] + [
+        _enrich_scheme({**s, "_src": "myscheme",   "_src_label": "MyScheme",    "_src_url": "myscheme.gov.in"})
+        for s in ms_raw
+    ]
+
 
     # ── 2. Category breakdown (derived entirely from scheme data) ──────────────
     cat_map: dict = {}
