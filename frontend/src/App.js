@@ -52,29 +52,29 @@ const timeAgo = iso => {
 };
 const palColor = i => PALETTE[i % PALETTE.length];
 
-// ── Safe URL — never produce a 404 link ──────────────────────────────────────
+// ── safeUrl — never produce a 404 link ───────────────────────────────────────
 const DEAD_URLS = [
   "https://jansoochna.rajasthan.gov.in/Scheme",
   "https://jansoochna.rajasthan.gov.in/Scheme/",
-  "https://rajras.in","https://rajras.in/",
-  "https://www.myscheme.gov.in","https://myscheme.gov.in",
+  "https://rajras.in", "https://rajras.in/",
+  "https://www.myscheme.gov.in", "https://myscheme.gov.in",
 ];
 const safeUrl = (s) => {
   if (!s) return null;
   const u = s.apply_url || s.url || "";
-  if (!u || DEAD_URLS.includes(u.replace(/\/$/,""))) {
-    if (s._src==="jansoochna"||(s.source||"").includes("jansoochna"))
+  if (!u || DEAD_URLS.includes(u.replace(/\/$/, ""))) {
+    if (s._src === "jansoochna" || (s.source||"").includes("jansoochna"))
       return "https://jansoochna.rajasthan.gov.in/";
-    if (s._src==="myscheme"||(s.source||"").includes("myscheme"))
-      return `https://www.myscheme.gov.in/search?q=${encodeURIComponent((s.name||"").slice(0,50))}`;
-    if (s._src==="rajras"||(s.source||"").includes("rajras"))
+    if (s._src === "myscheme" || (s.source||"").includes("myscheme"))
+      return "https://www.myscheme.gov.in/search?q=" + encodeURIComponent((s.name||"").slice(0,50));
+    if (s._src === "rajras" || (s.source||"").includes("rajras"))
       return "https://rajras.in/ras/pre/rajasthan/adm/schemes/";
     return null;
   }
   return u || null;
 };
 
-// ── ℹ️ InfoTip ────────────────────────────────────────────────────────────────
+// ── InfoTip — ℹ️ hover tooltip ────────────────────────────────────────────────
 function InfoTip({ text }) {
   const [show, setShow] = useState(false);
   return (
@@ -112,6 +112,7 @@ function InfoTip({ text }) {
     </span>
   );
 }
+
 
 // ── Shared tiny components ────────────────────────────────────────────────────
 function StatusDot({ status, animating }) {
@@ -178,16 +179,15 @@ function DashboardTab({ agg, srcStatus, onScrapeAll, onScrapeOne, scraping, scra
 
   return (
     <div className="fadeup">
-      <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:4 }}>
+      <div style={{ display:"flex", alignItems:"center", marginBottom:4 }}>
         <h1 style={{ fontSize:28, fontWeight:900, margin:0 }}>Namaste, <span style={{ color:"#f97316" }}>Mukhyamantri Ji</span> 🙏</h1>
-        <InfoTip text="KPI cards and charts are built from live-scraped data. Every number comes from the /aggregate API which merges all 4 scrapers. Use ⚡ Scrape Now to refresh."/>
+        <InfoTip text="KPIs and charts are built from live-scraped data. Every number comes from the /aggregate API which merges all 4 scrapers. Use ⚡ Scrape Now to refresh."/>
       </div>
       <p style={{ color:"#6b7280", fontSize:13, marginBottom:22 }}>
         All data scraped live · IGOD · RajRAS · Jan Soochna · MyScheme.gov.in
       </p>
 
-
-      {/* ── Live Data Summary Banner ── */}
+      {/* ── Live Data Summary ── */}
       <div style={{
         background:"linear-gradient(135deg,#fff7ed,#fffbeb,#f0f9ff)",
         border:"1.5px solid #fed7aa", borderRadius:14,
@@ -200,13 +200,13 @@ function DashboardTab({ agg, srcStatus, onScrapeAll, onScrapeOne, scraping, scra
         </div>
         <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:10 }}>
           {[
-            { icon:"📋", val:kpis.total_schemes,       label:"schemes scraped",  color:"#f97316", bg:"#fff7ed",
+            { icon:"📋", val:kpis.total_schemes,        label:"schemes scraped",  color:"#f97316", bg:"#fff7ed",
               tip:"Total scheme records from RajRAS (HTML scrape) + Jan Soochna (JSON API) + MyScheme (REST API). Updates on every scrape." },
-            { icon:"🏛️", val:kpis.total_portals,       label:"IGOD portals",     color:"#3b82f6", bg:"#eff6ff",
+            { icon:"🏛️", val:kpis.total_portals,        label:"IGOD portals",     color:"#3b82f6", bg:"#eff6ff",
               tip:"Government portals listed on igod.gov.in/sg/RJ/SPMA/organizations — each is a separate Rajasthan govt website." },
-            { icon:"🗂️", val:kpis.unique_categories,   label:"categories",       color:"#10b981", bg:"#f0fdf4",
+            { icon:"🗂️", val:kpis.unique_categories,    label:"categories",       color:"#10b981", bg:"#f0fdf4",
               tip:"Unique scheme categories found. Derived by keyword matching on scheme name/description — not from any API field directly." },
-            { icon:"✅", val:`${kpis.sources_live}/4`, label:"sources online",   color:"#8b5cf6", bg:"#faf5ff",
+            { icon:"✅", val:`${kpis.sources_live}/4`,  label:"sources online",   color:"#8b5cf6", bg:"#faf5ff",
               tip:"Live scrapers out of 4 total (IGOD, RajRAS, Jan Soochna, MyScheme). 4/4 means all portals responded successfully." },
           ].map((item, i) => (
             <div key={i} style={{ background:item.bg, border:`1px solid ${item.color}25`, borderRadius:10, padding:"10px 12px" }}>
@@ -384,9 +384,9 @@ function SchemesTab({ agg, onScrapeAll }) {
 
   return (
     <div className="fadeup">
-      <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:4 }}>
+      <div style={{ display:"flex", alignItems:"center", marginBottom:4 }}>
         <h2 style={{ fontSize:24, fontWeight:900, margin:0 }}>Government Schemes — <span style={{ color:"#f97316" }}>Real Data</span></h2>
-        <InfoTip text="Schemes from 3 sources: RajRAS (HTML article scrape → name, eligibility, benefit, objective), Jan Soochna JSON API (→ name, dept, beneficiary count), MyScheme REST API (→ name, ministry, tags, description). Categories derived by keyword matching."/>
+        <InfoTip text="Schemes from 3 sources: RajRAS (HTML article scrape → name, eligibility, benefit, objective), Jan Soochna JSON API (→ name, dept, beneficiary count), MyScheme REST API (→ name, ministry, tags, description). Categories are derived by keyword matching."/>
       </div>
       <p style={{ color:"#6b7280", fontSize:13, marginBottom:20 }}>
         {schemes.length} schemes scraped live from Jan Soochna · MyScheme.gov.in · RajRAS.
@@ -585,7 +585,7 @@ function PortalsTab({ agg, onScrapeAll }) {
 
   return (
     <div className="fadeup">
-      <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:4 }}>
+      <div style={{ display:"flex", alignItems:"center", marginBottom:4 }}>
         <h2 style={{ fontSize:24, fontWeight:900, margin:0 }}>Government Portals — <span style={{ color:"#f97316" }}>IGOD Directory</span></h2>
         <InfoTip text="Scraped from igod.gov.in/sg/RJ/SPMA/organizations — official IGOD directory for Rajasthan. Each card shows the portal name, domain, and meta description fetched from that portal's own homepage."/>
       </div>
@@ -704,9 +704,9 @@ function DistrictsTab({ agg, onScrapeAll }) {
 
   return (
     <div className="fadeup">
-      <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:4 }}>
+      <div style={{ display:"flex", alignItems:"center", marginBottom:4 }}>
         <h2 style={{ fontSize:24, fontWeight:900, margin:0 }}>District JJM Coverage — <span style={{ color:"#f97316" }}>JJM MIS Data</span></h2>
-        <InfoTip text="Coverage % from JJM MIS (ejalshakti.gov.in) — Jal Jeevan Mission tracking system. Shows % of rural households with functional tap water. Scheme counts below are derived live from the scraped schemes data."/>
+        <InfoTip text="Coverage % from JJM MIS (ejalshakti.gov.in) — Jal Jeevan Mission tracking system. Shows % of rural households with functional tap water. Scheme counts are derived live from scraped schemes data."/>
       </div>
       <p style={{ color:"#6b7280", fontSize:13, marginBottom:4 }}>
         Tap water coverage · Source: JJM MIS / ejalshakti.gov.in · As of Jan–Feb 2025
@@ -783,7 +783,7 @@ function AlertsTab({ agg, onScrapeAll }) {
 
   return (
     <div className="fadeup">
-      <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:4 }}>
+      <div style={{ display:"flex", alignItems:"center", marginBottom:4 }}>
         <h2 style={{ fontSize:24, fontWeight:900, margin:0 }}>Intelligence Alerts — <span style={{ color:"#f97316" }}>Source-Cited</span></h2>
         <InfoTip text="Alerts are auto-generated by the backend from scraped data patterns — not hardcoded. Each alert cites the actual scheme counts and categories found during scraping."/>
       </div>
@@ -868,47 +868,35 @@ function AlertsTab({ agg, onScrapeAll }) {
 // ── Root App ──────────────────────────────────────────────────────────────────
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// INSIGHTS TAB — self-contained, no imports needed
+// INSIGHTS TAB — inline, no separate file needed
 // ═══════════════════════════════════════════════════════════════════════════════
-const IC = { orange:"#f97316",blue:"#3b82f6",green:"#10b981",red:"#ef4444",purple:"#8b5cf6",amber:"#f59e0b",text:"#0f172a",muted:"#64748b",card:"#ffffff",border:"#e2e8f0" };
-const itxt = s=>[s.name,s.description,s.eligibility,s.benefit,s.objective,s.category,s.department,s.ministry,s.tags?.join?.(" ")].filter(Boolean).join(" ").toLowerCase();
-const ihas = (s,...kws) => kws.some(kw=>itxt(s).includes(kw.toLowerCase()));
-const parseINR = (str="") => { if(!str)return 0; const cr=str.match(/(\d+(?:\.\d+)?)\s*crore/i); if(cr)return parseFloat(cr[1])*1e7; const lk=str.match(/(\d+(?:\.\d+)?)\s*lakh/i); if(lk)return parseFloat(lk[1])*1e5; const k=str.match(/[₹Rs.]\s*([\d,]+)/); if(k)return parseInt(k[1].replace(/,/g,"")); return 0; };
-const fmtINR = v => v>=1e7?`₹${(v/1e7).toFixed(1)} Cr`:v>=1e5?`₹${(v/1e5).toFixed(1)} L`:`₹${v}`;
-const ICard = ({children,style={}}) => <div style={{background:IC.card,borderRadius:14,border:`1px solid ${IC.border}`,padding:20,boxShadow:"0 1px 6px rgba(0,0,0,0.05)",...style}}>{children}</div>;
-const IBadge = ({label,color=IC.orange,small}) => <span style={{background:`${color}18`,color,border:`1px solid ${color}28`,borderRadius:20,padding:small?"1px 8px":"3px 12px",fontSize:small?10:11,fontWeight:700,whiteSpace:"nowrap"}}>{label}</span>;
-const ISec = ({icon,title,sub,tip}) => (
-  <div style={{marginBottom:16}}>
-    <div style={{display:"flex",alignItems:"center",gap:8}}>
-      <span style={{fontSize:22}}>{icon}</span>
-      <h2 style={{fontSize:19,fontWeight:900,color:IC.text,margin:0}}>{title}</h2>
-      {tip&&<InfoTip text={tip}/>}
-    </div>
-    {sub&&<p style={{fontSize:12,color:IC.muted,margin:"3px 0 0 30px"}}>{sub}</p>}
-  </div>
-);
+const IC={orange:"#f97316",blue:"#3b82f6",green:"#10b981",red:"#ef4444",purple:"#8b5cf6",amber:"#f59e0b",text:"#0f172a",muted:"#64748b",card:"#ffffff",border:"#e2e8f0"};
+const itxt=s=>[s.name,s.description,s.eligibility,s.benefit,s.objective,s.category,s.department,s.ministry,s.tags?.join?.(" ")].filter(Boolean).join(" ").toLowerCase();
+const ihas=(s,...kws)=>kws.some(kw=>itxt(s).includes(kw.toLowerCase()));
+const parseINR=(str="")=>{if(!str)return 0;const cr=str.match(/(\d+(?:\.\d+)?)\s*crore/i);if(cr)return parseFloat(cr[1])*1e7;const lk=str.match(/(\d+(?:\.\d+)?)\s*lakh/i);if(lk)return parseFloat(lk[1])*1e5;const k=str.match(/[₹Rs.]\s*([\d,]+)/);if(k)return parseInt(k[1].replace(/,/g,""));return 0;};
+const fmtINR=v=>v>=1e7?`₹${(v/1e7).toFixed(1)} Cr`:v>=1e5?`₹${(v/1e5).toFixed(1)} L`:`₹${v}`;
+const ICard=({children,style={}})=><div style={{background:IC.card,borderRadius:14,border:`1px solid ${IC.border}`,padding:20,boxShadow:"0 1px 6px rgba(0,0,0,0.05)",...style}}>{children}</div>;
+const IBadge=({label,color=IC.orange,small})=><span style={{background:`${color}18`,color,border:`1px solid ${color}28`,borderRadius:20,padding:small?"1px 8px":"3px 12px",fontSize:small?10:11,fontWeight:700,whiteSpace:"nowrap"}}>{label}</span>;
+const ISec=({icon,title,sub,tip})=>(<div style={{marginBottom:16}}><div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:22}}>{icon}</span><h2 style={{fontSize:19,fontWeight:900,color:IC.text,margin:0}}>{title}</h2>{tip&&<InfoTip text={tip}/>}</div>{sub&&<p style={{fontSize:12,color:IC.muted,margin:"3px 0 0 30px"}}>{sub}</p>}</div>);
 
 function runIA(schemes,portals){
-  const catMap={};
-  schemes.forEach(s=>{const c=s.category||"General";if(!catMap[c])catMap[c]={name:c,count:0,schemes:[]};catMap[c].count++;catMap[c].schemes.push(s);});
+  const catMap={};schemes.forEach(s=>{const c=s.category||"General";if(!catMap[c])catMap[c]={name:c,count:0,schemes:[]};catMap[c].count++;catMap[c].schemes.push(s);});
   const categories=Object.values(catMap).sort((a,b)=>b.count-a.count);
-  const srcMap={};
-  schemes.forEach(s=>{const src=s._src_label||s.source?.split(".")?.[0]||"Unknown";srcMap[src]=(srcMap[src]||0)+1;});
-  const nameMap={};
-  schemes.forEach(s=>{const key=s.name?.toLowerCase().trim().slice(0,40)||"";if(!key)return;if(!nameMap[key])nameMap[key]=[];nameMap[key].push(s);});
+  const srcMap={};schemes.forEach(s=>{const src=s._src_label||s.source?.split(".")?.[0]||"Unknown";srcMap[src]=(srcMap[src]||0)+1;});
+  const nameMap={};schemes.forEach(s=>{const key=s.name?.toLowerCase().trim().slice(0,40)||"";if(!key)return;if(!nameMap[key])nameMap[key]=[];nameMap[key].push(s);});
   const duplicates=Object.values(nameMap).filter(g=>g.length>=2).filter(g=>new Set(g.map(s=>s._src_label||s.source)).size>=2).sort((a,b)=>b.length-a.length);
   const withValue=schemes.map(s=>({...s,_inr:parseINR(s.benefit||s.description||"")})).filter(s=>s._inr>0).sort((a,b)=>b._inr-a._inr).slice(0,12);
   const SEGS=[
-    {id:"women",  label:"Women & Girls",        icon:"👩",kws:["women","girl","mahila","beti","widow","rajshri","sukanya","maternity"]},
-    {id:"farmer", label:"Farmers",              icon:"🌾",kws:["farmer","kisan","agriculture","crop","farm","agri"]},
-    {id:"student",label:"Students & Youth",     icon:"🎓",kws:["student","scholarship","coaching","education","school","rozgar"]},
-    {id:"health", label:"Healthcare",           icon:"🏥",kws:["health","medical","chiranjeevi","ayushman","dawa","hospital"]},
-    {id:"elderly",label:"Senior Citizens",      icon:"👴",kws:["elderly","pension","old age","senior","widow","aged"]},
-    {id:"disabled",label:"Disabled",            icon:"♿",kws:["disabled","divyang","disability","handicap"]},
-    {id:"tribal", label:"Tribal / SC / ST",     icon:"🏕️",kws:["tribal","adivasi","sc ","st ","dalit","obc"]},
-    {id:"labour", label:"Workers & Labour",     icon:"⚒️",kws:["labour","worker","shramik","mgnrega","employment"]},
-    {id:"bpl",    label:"BPL / Below Poverty",  icon:"🏠",kws:["bpl","below poverty","poor","ration","pds","food security"]},
-    {id:"urban",  label:"Urban Citizens",       icon:"🏙️",kws:["urban","city","municipal","nagar","town","slum"]},
+    {id:"women",label:"Women & Girls",icon:"👩",kws:["women","girl","mahila","beti","widow","rajshri","sukanya","maternity"]},
+    {id:"farmer",label:"Farmers",icon:"🌾",kws:["farmer","kisan","agriculture","crop","farm","agri"]},
+    {id:"student",label:"Students & Youth",icon:"🎓",kws:["student","scholarship","coaching","education","school","rozgar"]},
+    {id:"health",label:"Healthcare",icon:"🏥",kws:["health","medical","chiranjeevi","ayushman","dawa","hospital"]},
+    {id:"elderly",label:"Senior Citizens",icon:"👴",kws:["elderly","pension","old age","senior","aged"]},
+    {id:"disabled",label:"Disabled",icon:"♿",kws:["disabled","divyang","disability","handicap"]},
+    {id:"tribal",label:"Tribal / SC / ST",icon:"🏕️",kws:["tribal","adivasi","sc ","st ","dalit","obc"]},
+    {id:"labour",label:"Workers & Labour",icon:"⚒️",kws:["labour","worker","shramik","mgnrega","employment"]},
+    {id:"bpl",label:"BPL / Below Poverty",icon:"🏠",kws:["bpl","below poverty","poor","ration","pds","food security"]},
+    {id:"urban",label:"Urban Citizens",icon:"🏙️",kws:["urban","city","municipal","nagar","town","slum"]},
   ];
   const segmentAnalysis=SEGS.map(seg=>{const matching=schemes.filter(s=>ihas(s,...seg.kws));return{...seg,matching,count:matching.length};}).sort((a,b)=>a.count-b.count);
   const noBenefit=schemes.filter(s=>!s.benefit&&!s.description);
@@ -934,39 +922,25 @@ function InsightsTab({schemes,portals,onScrapeFirst}){
   const [iCat,setICat]=useState("all");
   const analysis=useMemo(()=>schemes.length?runIA(schemes,portals):null,[schemes,portals]);
 
-  if(!schemes.length)return(
-    <div style={{padding:"60px 40px",textAlign:"center"}}>
-      <div style={{fontSize:64,marginBottom:16}}>📡</div>
-      <h3 style={{fontSize:20,fontWeight:800,color:IC.text,marginBottom:8}}>No Scraped Data Yet</h3>
-      <p style={{color:IC.muted,fontSize:14,maxWidth:360,margin:"0 auto 24px",lineHeight:1.6}}>Click <strong>⚡ Scrape Now</strong> to pull live data from all 4 portals.</p>
-      <button onClick={onScrapeFirst} style={{background:IC.orange,color:"white",borderRadius:12,padding:"13px 32px",fontWeight:800,fontSize:15,border:"none",cursor:"pointer"}}>⚡ Scrape Now</button>
-    </div>
-  );
+  if(!schemes.length)return(<div style={{padding:"60px 40px",textAlign:"center"}}><div style={{fontSize:64,marginBottom:16}}>📡</div><h3 style={{fontSize:20,fontWeight:800,color:IC.text,marginBottom:8}}>No Scraped Data Yet</h3><p style={{color:IC.muted,fontSize:14,maxWidth:360,margin:"0 auto 24px",lineHeight:1.6}}>Click <strong>⚡ Scrape Now</strong> to pull live data from all 4 portals.</p><button onClick={onScrapeFirst} style={{background:IC.orange,color:"white",borderRadius:12,padding:"13px 32px",fontWeight:800,fontSize:15,border:"none",cursor:"pointer"}}>⚡ Scrape Now</button></div>);
 
   const{categories,srcMap,duplicates,withValue,segmentAnalysis,score,actions,zeroSegs}=analysis;
   const scoreColor=score>=75?IC.green:score>=50?IC.amber:IC.red;
   const circ=2*Math.PI*36;
   const topCat=categories[0];
-
-  const ITABS=[
-    {id:"overview",label:"Overview"},
-    {id:"actions",label:"⚡ Actions"},
-    {id:"segments",label:"🎯 Coverage"},
-    {id:"sectors",label:"📊 Sectors"},
-    {id:"dupes",label:`🔄 Dupes (${duplicates.length})`},
-    {id:"benefits",label:"💰 Benefits"},
-    {id:"allschemes",label:`📋 All ${schemes.length}`},
-  ];
-
-  // ── Summary banner ──────────────────────────────────────────────────────────
+  const ITABS=[{id:"overview",label:"Overview"},{id:"actions",label:"⚡ Actions"},{id:"segments",label:"🎯 Coverage"},{id:"sectors",label:"📊 Sectors"},{id:"dupes",label:`🔄 Dupes (${duplicates.length})`},{id:"benefits",label:"💰 Benefits"},{id:"allschemes",label:`📋 All ${schemes.length}`}];
   const summaryItems=[
     {icon:"📋",val:schemes.length,label:"schemes scraped",color:IC.orange,bg:"#fff7ed",tip:"Total from RajRAS + Jan Soochna + MyScheme in this session."},
     {icon:"🏛️",val:portals.length,label:"IGOD portals",color:IC.blue,bg:"#eff6ff",tip:"Govt portals scraped from igod.gov.in directory."},
     {icon:"🗂️",val:categories.length,label:"categories",color:IC.green,bg:"#f0fdf4",tip:`Unique categories detected. Top: "${topCat?.name}" with ${topCat?.count} schemes.`},
     {icon:"🔄",val:duplicates.length,label:"duplicates",color:IC.purple,bg:"#faf5ff",tip:"Same scheme name found on 2+ portals."},
-    {icon:"⚠️",val:zeroSegs,label:"coverage gaps",color:zeroSegs>0?IC.red:IC.green,bg:zeroSegs>0?"#fff1f2":"#f0fdf4",tip:"Citizen groups with zero schemes found — potential policy gaps."},
+    {icon:"⚠️",val:zeroSegs,label:"coverage gaps",color:zeroSegs>0?IC.red:IC.green,bg:zeroSegs>0?"#fff1f2":"#f0fdf4",tip:"Citizen groups with zero schemes — potential policy gaps."},
     {icon:"💡",val:Object.keys(srcMap).length,label:"live sources",color:IC.amber,bg:"#fffbeb",tip:`Portals scraped: ${Object.keys(srcMap).join(", ")}. Zero AI API cost.`},
   ];
+
+  const srcLinks={RajRAS:"https://rajras.in/ras/pre/rajasthan/adm/schemes/","Jan Soochna":"https://jansoochna.rajasthan.gov.in/",MyScheme:"https://www.myscheme.gov.in/search?q=rajasthan","IGOD Portal":"https://igod.gov.in/sg/RJ/SPMA/organizations"};
+  const srcColors={RajRAS:IC.blue,"Jan Soochna":IC.green,MyScheme:IC.purple,"IGOD Portal":IC.orange};
+  const catColors=[IC.orange,IC.blue,IC.green,IC.purple,IC.red,IC.amber,"#06b6d4","#84cc16","#ec4899","#14b8a6"];
 
   return(
     <div className="fadeup">
@@ -978,289 +952,92 @@ function InsightsTab({schemes,portals,onScrapeFirst}){
         <p style={{color:IC.muted,fontSize:12,margin:0}}>{schemes.length} schemes analysed · Zero AI API · Updates on every scrape</p>
       </div>
 
-      {/* Summary banner */}
       <div style={{background:"linear-gradient(135deg,#fff7ed,#fffbeb,#f0f9ff)",border:"1.5px solid #fed7aa",borderRadius:14,padding:"14px 18px",marginBottom:20}}>
         <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:10}}>
           <span style={{fontSize:15}}>📊</span>
           <span style={{fontWeight:800,fontSize:14,color:"#1a1a2e"}}>Live Data Summary</span>
-          <InfoTip text="Every number here comes from the live scrape. Hover any ℹ️ for details on how it is calculated."/>
+          <InfoTip text="Every number here comes from the live scrape. Hover any ℹ️ for details."/>
         </div>
         <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:10}}>
-          {summaryItems.map((item,i)=>(
-            <div key={i} style={{background:item.bg,border:`1px solid ${item.color}25`,borderRadius:10,padding:"10px 12px"}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
-                <span style={{fontSize:18}}>{item.icon}</span>
-                <InfoTip text={item.tip}/>
-              </div>
-              <div style={{fontSize:21,fontWeight:900,color:item.color,lineHeight:1}}>{item.val}</div>
-              <div style={{fontSize:10,color:IC.muted,marginTop:3,lineHeight:1.3}}>{item.label}</div>
-            </div>
-          ))}
+          {summaryItems.map((item,i)=>(<div key={i} style={{background:item.bg,border:`1px solid ${item.color}25`,borderRadius:10,padding:"10px 12px"}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}><span style={{fontSize:18}}>{item.icon}</span><InfoTip text={item.tip}/></div><div style={{fontSize:21,fontWeight:900,color:item.color,lineHeight:1}}>{item.val}</div><div style={{fontSize:10,color:IC.muted,marginTop:3,lineHeight:1.3}}>{item.label}</div></div>))}
         </div>
       </div>
 
-      {/* Tab nav */}
       <div style={{display:"flex",gap:4,flexWrap:"wrap",marginBottom:22,borderBottom:`1px solid ${IC.border}`}}>
-        {ITABS.map(t=>(
-          <button key={t.id} onClick={()=>setActiveTab(t.id)} style={{background:"transparent",border:"none",borderBottom:activeTab===t.id?`2.5px solid ${IC.orange}`:"2.5px solid transparent",color:activeTab===t.id?IC.orange:IC.muted,fontWeight:activeTab===t.id?700:500,fontSize:13,padding:"9px 14px",cursor:"pointer"}}>{t.label}</button>
-        ))}
+        {ITABS.map(t=>(<button key={t.id} onClick={()=>setActiveTab(t.id)} style={{background:"transparent",border:"none",borderBottom:activeTab===t.id?`2.5px solid ${IC.orange}`:"2.5px solid transparent",color:activeTab===t.id?IC.orange:IC.muted,fontWeight:activeTab===t.id?700:500,fontSize:13,padding:"9px 14px",cursor:"pointer"}}>{t.label}</button>))}
       </div>
 
-      {/* OVERVIEW */}
       {activeTab==="overview"&&<div style={{display:"flex",flexDirection:"column",gap:24}}>
-        {/* Health score */}
         <ICard style={{background:"linear-gradient(135deg,#fff7ed,#fffbeb)",borderColor:"#fed7aa"}}>
           <div style={{display:"flex",gap:20,alignItems:"flex-start"}}>
             <div style={{position:"relative",width:90,height:90,flexShrink:0}}>
-              <svg width="90" height="90" style={{transform:"rotate(-90deg)"}}>
-                <circle cx="45" cy="45" r="36" fill="none" stroke="#e5e7eb" strokeWidth="9"/>
-                <circle cx="45" cy="45" r="36" fill="none" stroke={scoreColor} strokeWidth="9" strokeDasharray={`${(score/100)*circ} ${circ}`} strokeLinecap="round"/>
-              </svg>
-              <div style={{position:"absolute",inset:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
-                <span style={{fontSize:22,fontWeight:900,color:scoreColor}}>{score}</span>
-                <span style={{fontSize:9,color:IC.muted}}>/ 100</span>
-              </div>
+              <svg width="90" height="90" style={{transform:"rotate(-90deg)"}}><circle cx="45" cy="45" r="36" fill="none" stroke="#e5e7eb" strokeWidth="9"/><circle cx="45" cy="45" r="36" fill="none" stroke={scoreColor} strokeWidth="9" strokeDasharray={`${(score/100)*circ} ${circ}`} strokeLinecap="round"/></svg>
+              <div style={{position:"absolute",inset:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}><span style={{fontSize:22,fontWeight:900,color:scoreColor}}>{score}</span><span style={{fontSize:9,color:IC.muted}}>/ 100</span></div>
             </div>
             <div style={{flex:1}}>
               <div style={{fontSize:11,fontWeight:700,color:IC.orange,letterSpacing:"0.1em",marginBottom:6}}>EXECUTIVE BRIEFING · OFFICE OF CM · RAJASTHAN</div>
               <div style={{fontSize:17,fontWeight:800,color:IC.text,marginBottom:4}}>Welfare Ecosystem Health: <span style={{color:scoreColor}}>{score>=75?"GOOD":score>=50?"NEEDS ATTENTION":"CRITICAL GAPS"}</span></div>
               <p style={{fontSize:13,color:IC.muted,margin:"0 0 12px",lineHeight:1.5}}>Analysis of {schemes.length} live-scraped schemes · {portals.length} IGOD portals</p>
               <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8}}>
-                {[
-                  {label:"SCHEMES",val:schemes.length,color:IC.orange,tip:"Total from RajRAS+Jan Soochna+MyScheme."},
-                  {label:"PORTALS",val:portals.length,color:IC.blue,tip:"Govt portals from igod.gov.in directory."},
-                  {label:"DUPES",val:duplicates.length,color:IC.purple,tip:"Same scheme name on 2+ portals."},
-                  {label:"GAPS",val:zeroSegs,color:IC.red,tip:"Citizen groups with zero scheme coverage."},
-                ].map((k,i)=>(
-                  <div key={i} style={{background:"white",borderRadius:9,padding:"8px 10px",border:`1px solid ${IC.border}`}}>
-                    <div style={{display:"flex",alignItems:"center",gap:3,marginBottom:3}}>
-                      <div style={{fontSize:9,fontWeight:700,color:IC.muted,letterSpacing:"0.07em"}}>{k.label}</div>
-                      <InfoTip text={k.tip}/>
-                    </div>
-                    <div style={{fontSize:20,fontWeight:900,color:k.color}}>{k.val}</div>
-                  </div>
-                ))}
+                {[{label:"SCHEMES",val:schemes.length,color:IC.orange,tip:"Total from RajRAS+Jan Soochna+MyScheme."},{label:"PORTALS",val:portals.length,color:IC.blue,tip:"Govt portals from igod.gov.in directory."},{label:"DUPES",val:duplicates.length,color:IC.purple,tip:"Same scheme name on 2+ portals."},{label:"GAPS",val:zeroSegs,color:IC.red,tip:"Citizen groups with zero scheme coverage."}].map((k,i)=>(<div key={i} style={{background:"white",borderRadius:9,padding:"8px 10px",border:`1px solid ${IC.border}`}}><div style={{display:"flex",alignItems:"center",gap:3,marginBottom:3}}><div style={{fontSize:9,fontWeight:700,color:IC.muted,letterSpacing:"0.07em"}}>{k.label}</div><InfoTip text={k.tip}/></div><div style={{fontSize:20,fontWeight:900,color:k.color}}>{k.val}</div></div>))}
               </div>
             </div>
           </div>
         </ICard>
-        {/* Source breakdown inline */}
         <ISec icon="📡" title="Data Sources" sub="Schemes from each portal" tip="RajRAS: HTML scrape. Jan Soochna: JSON API. MyScheme: REST API. Click source name to visit portal."/>
         <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:10}}>
-          {[{src:"RajRAS",link:"https://rajras.in/ras/pre/rajasthan/adm/schemes/",color:IC.blue},{src:"Jan Soochna",link:"https://jansoochna.rajasthan.gov.in/",color:IC.green},{src:"MyScheme",link:"https://www.myscheme.gov.in/search?q=rajasthan",color:IC.purple},{src:"IGOD Portal",link:"https://igod.gov.in/sg/RJ/SPMA/organizations",color:IC.orange}].filter(x=>srcMap[x.src]>0).map((x,i)=>{
-            const count=srcMap[x.src]||0;
-            const max=Math.max(...Object.values(srcMap));
-            return(
-              <ICard key={i} style={{padding:16,border:`1px solid ${x.color}25`,background:`${x.color}06`}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-                  <a href={x.link} target="_blank" rel="noreferrer" style={{fontWeight:700,fontSize:13,color:IC.text,textDecoration:"none"}}>{x.src}<span style={{fontSize:10,color:x.color,marginLeft:3}}>↗</span></a>
-                  <span style={{fontSize:26,fontWeight:900,color:x.color}}>{count}</span>
-                </div>
-                <div style={{height:6,background:"#f1f5f9",borderRadius:3,overflow:"hidden",marginBottom:4}}>
-                  <div style={{width:`${Math.round((count/max)*100)}%`,height:"100%",background:x.color,borderRadius:3}}/>
-                </div>
-                <div style={{fontSize:11,color:IC.muted}}>{Math.round((count/(schemes.length||1))*100)}% of total</div>
-              </ICard>
-            );
-          })}
+          {Object.entries(srcMap).sort((a,b)=>b[1]-a[1]).map(([src,count],i)=>{const color=srcColors[src]||IC.orange;const max=Math.max(...Object.values(srcMap));return(<ICard key={i} style={{padding:16,border:`1px solid ${color}25`,background:`${color}06`}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}><a href={srcLinks[src]||"#"} target="_blank" rel="noreferrer" style={{fontWeight:700,fontSize:13,color:IC.text,textDecoration:"none"}}>{src}<span style={{fontSize:10,color,marginLeft:3}}>↗</span></a><span style={{fontSize:26,fontWeight:900,color}}>{count}</span></div><div style={{height:6,background:"#f1f5f9",borderRadius:3,overflow:"hidden",marginBottom:4}}><div style={{width:`${Math.round((count/max)*100)}%`,height:"100%",background:color,borderRadius:3}}/></div><div style={{fontSize:11,color:IC.muted}}>{Math.round((count/(schemes.length||1))*100)}% of total</div></ICard>);})}
         </div>
       </div>}
 
-      {/* ACTIONS */}
       {activeTab==="actions"&&<div>
         <ISec icon="⚡" title="Priority Actions for CM" sub="Generated from scraped data — click to expand" tip="Rules: (1) zero-coverage segments→CRITICAL (2) duplicates→HIGH (3) weak sector→HIGH (4) missing descriptions→MEDIUM (5) portal fragmentation→MEDIUM"/>
         <div style={{display:"flex",flexDirection:"column",gap:10}}>
-          {actions.map((a,i)=>{
-            const pc={CRITICAL:IC.red,HIGH:IC.orange,MEDIUM:IC.amber}[a.priority]||IC.amber;
-            return(
-              <div key={i} onClick={()=>setOpenAction(openAction===i?null:i)} style={{background:i===0?"linear-gradient(135deg,#fff7ed,#fffbeb)":IC.card,borderRadius:12,border:`1px solid ${i===0?"#fed7aa":IC.border}`,borderLeft:`4px solid ${pc}`,padding:16,cursor:"pointer"}}>
-                <div style={{display:"flex",gap:12,alignItems:"flex-start"}}>
-                  <div style={{width:38,height:38,borderRadius:10,flexShrink:0,background:i===0?IC.orange:`${pc}15`,color:i===0?"white":pc,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,fontWeight:900}}>{a.rank}</div>
-                  <div style={{flex:1}}>
-                    <div style={{display:"flex",gap:6,marginBottom:6,flexWrap:"wrap"}}>
-                      <IBadge label={a.priority} color={pc} small/>
-                      <IBadge label={`⏱ ${a.timeline}`} color={{CRITICAL:IC.red,HIGH:IC.orange,MEDIUM:IC.blue}[a.priority]||IC.orange} small/>
-                      <span style={{fontSize:15}}>{a.icon}</span>
-                    </div>
-                    <div style={{fontWeight:800,fontSize:14,color:IC.text,marginBottom:3}}>{a.title}</div>
-                    <p style={{fontSize:12,color:IC.muted,margin:0,lineHeight:1.5}}>{a.why}</p>
-                    {openAction===i&&<div style={{marginTop:8,background:"#f0fdf4",borderRadius:8,padding:"8px 12px"}}><span style={{fontSize:10,fontWeight:700,color:"#166534",letterSpacing:"0.07em"}}>IMPACT  </span><span style={{fontSize:12,color:"#14532d",fontWeight:600}}>{a.impact}</span></div>}
-                    <div style={{fontSize:10,color:IC.muted,marginTop:4}}>{openAction===i?"▲ Less":"▼ See impact"}</div>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
+          {actions.map((a,i)=>{const pc={CRITICAL:IC.red,HIGH:IC.orange,MEDIUM:IC.amber}[a.priority]||IC.amber;return(<div key={i} onClick={()=>setOpenAction(openAction===i?null:i)} style={{background:i===0?"linear-gradient(135deg,#fff7ed,#fffbeb)":IC.card,borderRadius:12,border:`1px solid ${i===0?"#fed7aa":IC.border}`,borderLeft:`4px solid ${pc}`,padding:16,cursor:"pointer"}}><div style={{display:"flex",gap:12,alignItems:"flex-start"}}><div style={{width:38,height:38,borderRadius:10,flexShrink:0,background:i===0?IC.orange:`${pc}15`,color:i===0?"white":pc,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,fontWeight:900}}>{a.rank}</div><div style={{flex:1}}><div style={{display:"flex",gap:6,marginBottom:6,flexWrap:"wrap"}}><IBadge label={a.priority} color={pc} small/><IBadge label={`⏱ ${a.timeline}`} color={{CRITICAL:IC.red,HIGH:IC.orange,MEDIUM:IC.blue}[a.priority]||IC.orange} small/><span style={{fontSize:15}}>{a.icon}</span></div><div style={{fontWeight:800,fontSize:14,color:IC.text,marginBottom:3}}>{a.title}</div><p style={{fontSize:12,color:IC.muted,margin:0,lineHeight:1.5}}>{a.why}</p>{openAction===i&&<div style={{marginTop:8,background:"#f0fdf4",borderRadius:8,padding:"8px 12px"}}><span style={{fontSize:10,fontWeight:700,color:"#166534",letterSpacing:"0.07em"}}>IMPACT  </span><span style={{fontSize:12,color:"#14532d",fontWeight:600}}>{a.impact}</span></div>}<div style={{fontSize:10,color:IC.muted,marginTop:4}}>{openAction===i?"▲ Less":"▼ See impact"}</div></div></div></div>);})}
         </div>
       </div>}
 
-      {/* SEGMENTS */}
       {activeTab==="segments"&&<div>
-        <ISec icon="🎯" title="Citizen Segment Coverage" sub="Schemes matched per citizen group" tip="Each segment matched by scanning all scheme text fields for keywords. e.g. 'Women' matches schemes containing: women, girl, mahila, beti, widow, rajshri, sukanya, maternity."/>
+        <ISec icon="🎯" title="Citizen Segment Coverage" sub="Schemes matched per citizen group" tip="Each segment matched by scanning all scheme text fields for keywords. e.g. 'Women' matches: women, girl, mahila, beti, widow, rajshri, sukanya, maternity."/>
         <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:10}}>
-          {segmentAnalysis.map((seg,i)=>{
-            const color=seg.count===0?IC.red:seg.count<=2?IC.amber:IC.green;
-            const isExp=expandedSegs[seg.id];
-            const shown=isExp?seg.matching:seg.matching.slice(0,3);
-            return(
-              <ICard key={i} style={{borderLeft:`4px solid ${color}`,background:seg.count===0?"#fef2f2":IC.card,borderColor:seg.count===0?"#fecaca":IC.border,padding:14}}>
-                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
-                  <div style={{display:"flex",alignItems:"center",gap:7}}>
-                    <span style={{fontSize:20}}>{seg.icon}</span>
-                    <span style={{fontWeight:700,fontSize:13,color:IC.text}}>{seg.label}</span>
-                    <InfoTip text={`Keywords: ${seg.kws.join(", ")}`}/>
-                  </div>
-                  <div style={{textAlign:"right"}}>
-                    <div style={{fontSize:24,fontWeight:900,color}}>{seg.count}</div>
-                    <IBadge label={seg.count===0?"NO COVERAGE":seg.count<=2?"THIN":"COVERED"} color={color} small/>
-                  </div>
-                </div>
-                <div style={{height:5,background:"#f1f5f9",borderRadius:3,overflow:"hidden",marginBottom:8}}>
-                  <div style={{width:`${Math.min(seg.count*8,100)}%`,height:"100%",background:color,borderRadius:3}}/>
-                </div>
-                {seg.matching.length>0?(
-                  <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
-                    {shown.map((s,j)=>{const u=safeUrl(s);return u?(
-                      <a key={j} href={u} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()} style={{background:`${color}10`,color,border:`1px solid ${color}25`,borderRadius:5,padding:"1px 7px",fontSize:10,fontWeight:600,textDecoration:"none"}}>{s.name?.slice(0,22)}{s.name?.length>22?"…":""}↗</a>
-                    ):(
-                      <span key={j} style={{background:`${color}10`,color,border:`1px solid ${color}25`,borderRadius:5,padding:"1px 7px",fontSize:10,fontWeight:600}}>{s.name?.slice(0,22)}{s.name?.length>22?"…":""}</span>
-                    );})}
-                    {!isExp&&seg.matching.length>3&&<button onClick={e=>{e.stopPropagation();setExpandedSegs(p=>({...p,[seg.id]:true}));}} style={{background:"none",border:`1px dashed ${color}60`,borderRadius:5,padding:"1px 7px",fontSize:10,color,cursor:"pointer",fontWeight:600}}>+{seg.matching.length-3} more</button>}
-                    {isExp&&seg.matching.length>3&&<button onClick={e=>{e.stopPropagation();setExpandedSegs(p=>({...p,[seg.id]:false}));}} style={{background:"none",border:`1px dashed ${color}60`,borderRadius:5,padding:"1px 7px",fontSize:10,color,cursor:"pointer",fontWeight:600}}>▲ less</button>}
-                  </div>
-                ):<span style={{fontSize:11,color:"#991b1b",fontWeight:600}}>⚠️ No schemes for this group</span>}
-              </ICard>
-            );
-          })}
+          {segmentAnalysis.map((seg,i)=>{const color=seg.count===0?IC.red:seg.count<=2?IC.amber:IC.green;const isExp=expandedSegs[seg.id];const shown=isExp?seg.matching:seg.matching.slice(0,3);return(<ICard key={i} style={{borderLeft:`4px solid ${color}`,background:seg.count===0?"#fef2f2":IC.card,borderColor:seg.count===0?"#fecaca":IC.border,padding:14}}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}><div style={{display:"flex",alignItems:"center",gap:7}}><span style={{fontSize:20}}>{seg.icon}</span><span style={{fontWeight:700,fontSize:13,color:IC.text}}>{seg.label}</span><InfoTip text={`Keywords: ${seg.kws.join(", ")}`}/></div><div style={{textAlign:"right"}}><div style={{fontSize:24,fontWeight:900,color}}>{seg.count}</div><IBadge label={seg.count===0?"NO COVERAGE":seg.count<=2?"THIN":"COVERED"} color={color} small/></div></div><div style={{height:5,background:"#f1f5f9",borderRadius:3,overflow:"hidden",marginBottom:8}}><div style={{width:`${Math.min(seg.count*8,100)}%`,height:"100%",background:color,borderRadius:3}}/></div>{seg.matching.length>0?(<div style={{display:"flex",gap:4,flexWrap:"wrap"}}>{shown.map((s,j)=>{const u=safeUrl(s);return u?(<a key={j} href={u} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()} style={{background:`${color}10`,color,border:`1px solid ${color}25`,borderRadius:5,padding:"1px 7px",fontSize:10,fontWeight:600,textDecoration:"none"}}>{s.name?.slice(0,22)}{s.name?.length>22?"…":""}↗</a>):(<span key={j} style={{background:`${color}10`,color,border:`1px solid ${color}25`,borderRadius:5,padding:"1px 7px",fontSize:10,fontWeight:600}}>{s.name?.slice(0,22)}{s.name?.length>22?"…":""}</span>);})} {!isExp&&seg.matching.length>3&&<button onClick={e=>{e.stopPropagation();setExpandedSegs(p=>({...p,[seg.id]:true}));}} style={{background:"none",border:`1px dashed ${color}60`,borderRadius:5,padding:"1px 7px",fontSize:10,color,cursor:"pointer",fontWeight:600}}>+{seg.matching.length-3} more</button>} {isExp&&seg.matching.length>3&&<button onClick={e=>{e.stopPropagation();setExpandedSegs(p=>({...p,[seg.id]:false}));}} style={{background:"none",border:`1px dashed ${color}60`,borderRadius:5,padding:"1px 7px",fontSize:10,color,cursor:"pointer",fontWeight:600}}>▲ less</button>}</div>):<span style={{fontSize:11,color:"#991b1b",fontWeight:600}}>⚠️ No schemes for this group</span>}</ICard>);})}
         </div>
       </div>}
 
-      {/* SECTORS */}
       {activeTab==="sectors"&&<div>
         <ISec icon="📊" title="Scheme Distribution by Sector" sub="Count per category" tip="Categories from scraper keyword classifier. Imbalances show policy investment gaps."/>
-        <ICard>
-          <div style={{display:"flex",flexDirection:"column",gap:10}}>
-            {categories.map((cat,i)=>{
-              const colors=[IC.orange,IC.blue,IC.green,IC.purple,IC.red,IC.amber,"#06b6d4","#84cc16","#ec4899","#14b8a6"];
-              const color=colors[i%colors.length];
-              return(
-                <div key={i}>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
-                    <span style={{fontSize:13,fontWeight:600,color:IC.text}}>{cat.name}</span>
-                    <div style={{display:"flex",alignItems:"center",gap:6}}>
-                      {cat.schemes.slice(0,2).map((s,j)=><span key={j} style={{fontSize:9,color:IC.muted,background:"#f1f5f9",borderRadius:4,padding:"1px 5px",maxWidth:100,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.name?.slice(0,18)}</span>)}
-                      <span style={{fontWeight:900,fontSize:15,color,minWidth:24,textAlign:"right"}}>{cat.count}</span>
-                    </div>
-                  </div>
-                  <div style={{height:8,background:"#f1f5f9",borderRadius:4,overflow:"hidden"}}>
-                    <div style={{width:`${Math.round((cat.count/(categories[0]?.count||1))*100)}%`,height:"100%",background:color,borderRadius:4}}/>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </ICard>
+        <ICard><div style={{display:"flex",flexDirection:"column",gap:10}}>{categories.map((cat,i)=>{const color=catColors[i%catColors.length];return(<div key={i}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}><span style={{fontSize:13,fontWeight:600,color:IC.text}}>{cat.name}</span><div style={{display:"flex",alignItems:"center",gap:6}}>{cat.schemes.slice(0,2).map((s,j)=><span key={j} style={{fontSize:9,color:IC.muted,background:"#f1f5f9",borderRadius:4,padding:"1px 5px",maxWidth:100,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.name?.slice(0,18)}</span>)}<span style={{fontWeight:900,fontSize:15,color,minWidth:24,textAlign:"right"}}>{cat.count}</span></div></div><div style={{height:8,background:"#f1f5f9",borderRadius:4,overflow:"hidden"}}><div style={{width:`${Math.round((cat.count/(categories[0]?.count||1))*100)}%`,height:"100%",background:color,borderRadius:4}}/></div></div>);})}</div></ICard>
       </div>}
 
-      {/* DUPES */}
       {activeTab==="dupes"&&<div>
         <ISec icon="🔄" title={duplicates.length>0?`${duplicates.length} Duplicates Detected`:"Duplicate Detection"} sub="Same scheme name on multiple portals" tip="Scheme names normalised (lowercase, first 40 chars). Groups with 2+ entries AND 2+ distinct portals flagged."/>
-        {duplicates.length===0?<ICard style={{textAlign:"center",padding:30}}><span style={{fontSize:32}}>✅</span><p style={{color:IC.muted,marginTop:8}}>No duplicates detected.</p></ICard>:
-        <div style={{display:"flex",flexDirection:"column",gap:10}}>
-          {duplicates.slice(0,8).map((group,i)=>(
-            <ICard key={i} style={{borderLeft:`4px solid ${IC.purple}`,padding:14}}>
-              <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}>
-                <div style={{flex:1}}>
-                  <div style={{fontWeight:800,fontSize:14,color:IC.text,marginBottom:5}}>{group[0].name}</div>
-                  <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
-                    {group.map((s,j)=>{const u=safeUrl(s);return u?<a key={j} href={u} target="_blank" rel="noreferrer" style={{background:`${IC.purple}12`,color:IC.purple,border:`1px solid ${IC.purple}25`,borderRadius:6,padding:"3px 10px",fontSize:11,fontWeight:600,textDecoration:"none"}}>{s._src_label}↗</a>:<IBadge key={j} label={s._src_label||"?"} color={IC.purple} small/>;})}
-                  </div>
-                </div>
-                <div style={{textAlign:"right",flexShrink:0,marginLeft:10}}><div style={{fontSize:26,fontWeight:900,color:IC.purple}}>{group.length}×</div><div style={{fontSize:9,color:IC.muted}}>portals</div></div>
-              </div>
-              {group.find(s=>s.benefit)&&<div style={{fontSize:12,color:IC.muted}}>Benefit: <strong style={{color:IC.text}}>{group.find(s=>s.benefit).benefit}</strong></div>}
-            </ICard>
-          ))}
-        </div>}
+        {duplicates.length===0?<ICard style={{textAlign:"center",padding:30}}><span style={{fontSize:32}}>✅</span><p style={{color:IC.muted,marginTop:8}}>No duplicates detected.</p></ICard>:<div style={{display:"flex",flexDirection:"column",gap:10}}>{duplicates.slice(0,8).map((group,i)=>(<ICard key={i} style={{borderLeft:`4px solid ${IC.purple}`,padding:14}}><div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}><div style={{flex:1}}><div style={{fontWeight:800,fontSize:14,color:IC.text,marginBottom:5}}>{group[0].name}</div><div style={{display:"flex",gap:5,flexWrap:"wrap"}}>{group.map((s,j)=>{const u=safeUrl(s);return u?<a key={j} href={u} target="_blank" rel="noreferrer" style={{background:`${IC.purple}12`,color:IC.purple,border:`1px solid ${IC.purple}25`,borderRadius:6,padding:"3px 10px",fontSize:11,fontWeight:600,textDecoration:"none"}}>{s._src_label}↗</a>:<IBadge key={j} label={s._src_label||"?"} color={IC.purple} small/>;})}</div></div><div style={{textAlign:"right",flexShrink:0,marginLeft:10}}><div style={{fontSize:26,fontWeight:900,color:IC.purple}}>{group.length}×</div><div style={{fontSize:9,color:IC.muted}}>portals</div></div></div>{group.find(s=>s.benefit)&&<div style={{fontSize:12,color:IC.muted}}>Benefit: <strong style={{color:IC.text}}>{group.find(s=>s.benefit).benefit}</strong></div>}</ICard>))}</div>}
       </div>}
 
-      {/* BENEFITS */}
       {activeTab==="benefits"&&withValue.length>0&&<div>
         <ISec icon="💰" title="Highest Value Schemes" sub="Ranked by monetary benefit parsed from scraped text" tip="parseINR() scans benefit/description for: 'N crore'→×1Cr, 'N lakh'→×1L, '₹N'→as-is. Click ↗ to open scheme page."/>
-        <ICard>
-          <div style={{display:"flex",flexDirection:"column",gap:10}}>
-            {withValue.slice(0,10).map((s,i)=>{
-              const src=s._src_label||"?";
-              const srcC={RajRAS:IC.blue,"Jan Soochna":IC.green,MyScheme:IC.purple}[src]||IC.orange;
-              const u=safeUrl(s);
-              return(
-                <div key={i} style={{display:"flex",alignItems:"center",gap:10}}>
-                  <div style={{width:24,height:24,borderRadius:6,flexShrink:0,background:i<3?IC.orange:"#f1f5f9",color:i<3?"white":IC.muted,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800}}>{i+1}</div>
-                  <div style={{flex:1,minWidth:0}}>
-                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:3}}>
-                      <span style={{fontSize:13,fontWeight:600,color:IC.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:"52%"}}>{s.name}</span>
-                      <div style={{display:"flex",alignItems:"center",gap:5,flexShrink:0}}>
-                        <IBadge label={src} color={srcC} small/>
-                        {u&&<a href={u} target="_blank" rel="noreferrer" style={{fontSize:10,color:srcC,fontWeight:700,textDecoration:"none"}}>↗</a>}
-                        <span style={{fontWeight:900,fontSize:13,color:IC.orange}}>{fmtINR(s._inr)}</span>
-                      </div>
-                    </div>
-                    <div style={{height:5,background:"#f1f5f9",borderRadius:3,overflow:"hidden"}}>
-                      <div style={{width:`${Math.round((s._inr/withValue[0]._inr)*100)}%`,height:"100%",background:i<3?"linear-gradient(90deg,#f97316,#f59e0b)":"#94a3b8",borderRadius:3}}/>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </ICard>
+        <ICard><div style={{display:"flex",flexDirection:"column",gap:10}}>{withValue.slice(0,10).map((s,i)=>{const src=s._src_label||"?";const srcC=srcColors[src]||IC.orange;const u=safeUrl(s);return(<div key={i} style={{display:"flex",alignItems:"center",gap:10}}><div style={{width:24,height:24,borderRadius:6,flexShrink:0,background:i<3?IC.orange:"#f1f5f9",color:i<3?"white":IC.muted,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800}}>{i+1}</div><div style={{flex:1,minWidth:0}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:3}}><span style={{fontSize:13,fontWeight:600,color:IC.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:"52%"}}>{s.name}</span><div style={{display:"flex",alignItems:"center",gap:5,flexShrink:0}}><IBadge label={src} color={srcC} small/>{u&&<a href={u} target="_blank" rel="noreferrer" style={{fontSize:10,color:srcC,fontWeight:700,textDecoration:"none"}}>↗</a>}<span style={{fontWeight:900,fontSize:13,color:IC.orange}}>{fmtINR(s._inr)}</span></div></div><div style={{height:5,background:"#f1f5f9",borderRadius:3,overflow:"hidden"}}><div style={{width:`${Math.round((s._inr/withValue[0]._inr)*100)}%`,height:"100%",background:i<3?"linear-gradient(90deg,#f97316,#f59e0b)":"#94a3b8",borderRadius:3}}/></div></div></div>);})}</div></ICard>
       </div>}
 
-      {/* ALL SCHEMES */}
-      {activeTab==="allschemes"&&<div>
-        <ISec icon="📋" title={`All ${schemes.length} Scraped Schemes`} sub="Search, filter, visit" tip="RajRAS: specific article URL. MyScheme: scheme page. Jan Soochna: portal homepage (no individual URLs available from API)."/>
-        <div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap"}}>
-          <input value={iSearch} onChange={e=>{setISearch(e.target.value);setShowCount(50);}} placeholder="Search…" style={{flex:1,minWidth:200,padding:"9px 14px",border:`1px solid ${IC.border}`,borderRadius:9,fontSize:13,background:"white",outline:"none"}}/>
-          <select value={iCat} onChange={e=>{setICat(e.target.value);setShowCount(50);}} style={{padding:"9px 14px",border:`1px solid ${IC.border}`,borderRadius:9,fontSize:13,background:"white",cursor:"pointer"}}>
-            <option value="all">All Categories</option>
-            {[...new Set(schemes.map(s=>s.category||"General"))].sort().map(c=><option key={c} value={c}>{c}</option>)}
-          </select>
-        </div>
-        {(()=>{
-          const fil=schemes.filter(s=>(!iSearch||itxt(s).includes(iSearch.toLowerCase()))&&(iCat==="all"||(s.category||"General")===iCat));
-          return(<>
-            <div style={{fontSize:12,color:IC.muted,marginBottom:10}}>Showing {Math.min(showCount,fil.length)} of {fil.length}</div>
-            <div style={{display:"flex",flexDirection:"column",gap:8}}>
-              {fil.slice(0,showCount).map((s,i)=>{
-                const src=s._src_label||"?";
-                const srcC={RajRAS:IC.blue,"Jan Soochna":IC.green,MyScheme:IC.purple}[src]||IC.orange;
-                const u=safeUrl(s);
-                return(
-                  <ICard key={i} style={{padding:12,borderLeft:`3px solid ${srcC}`}}>
-                    <div style={{display:"flex",gap:10,alignItems:"flex-start"}}>
-                      <div style={{flex:1}}>
-                        <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:4,flexWrap:"wrap"}}>
-                          <span style={{fontWeight:700,fontSize:13,color:IC.text}}>{s.name}</span>
-                          <IBadge label={s.category||"General"} color={srcC} small/>
-                          <IBadge label={src} color={srcC} small/>
-                        </div>
-                        {s.benefit&&<div style={{fontSize:12,color:"#166534",fontWeight:600,background:"#f0fdf4",borderRadius:5,padding:"2px 8px",display:"inline-block",marginBottom:3}}>💰 {s.benefit}</div>}
-                        {s.eligibility&&<div style={{fontSize:11,color:IC.muted}}>Who: {s.eligibility?.slice(0,100)}</div>}
-                        {!s.benefit&&s.description&&<div style={{fontSize:11,color:IC.muted}}>{s.description?.slice(0,120)}</div>}
-                      </div>
-                      {u&&<a href={u} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()} style={{fontSize:11,color:srcC,fontWeight:700,flexShrink:0,whiteSpace:"nowrap",textDecoration:"none"}}>Visit ↗</a>}
-                    </div>
-                  </ICard>
-                );
-              })}
-            </div>
-            {fil.length>showCount&&<div style={{textAlign:"center",marginTop:14}}><button onClick={()=>setShowCount(c=>c+50)} style={{background:"white",border:`1.5px solid ${IC.border}`,borderRadius:10,padding:"10px 28px",fontSize:13,fontWeight:700,color:IC.text,cursor:"pointer"}}>Show more ({fil.length-showCount} remaining)</button></div>}
-          </>);
-        })()}
-      </div>}
+      {activeTab==="allschemes"&&(()=>{
+        const fil=schemes.filter(s=>(!iSearch||itxt(s).includes(iSearch.toLowerCase()))&&(iCat==="all"||(s.category||"General")===iCat));
+        return(<div>
+          <ISec icon="📋" title={`All ${schemes.length} Scraped Schemes`} sub="Search, filter, visit" tip="RajRAS: specific article URL. MyScheme: scheme page. Jan Soochna: portal homepage (no individual URLs available from API)."/>
+          <div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap"}}>
+            <input value={iSearch} onChange={e=>{setISearch(e.target.value);setShowCount(50);}} placeholder="Search…" style={{flex:1,minWidth:200,padding:"9px 14px",border:`1px solid ${IC.border}`,borderRadius:9,fontSize:13,background:"white",outline:"none"}}/>
+            <select value={iCat} onChange={e=>{setICat(e.target.value);setShowCount(50);}} style={{padding:"9px 14px",border:`1px solid ${IC.border}`,borderRadius:9,fontSize:13,background:"white",cursor:"pointer"}}><option value="all">All Categories</option>{[...new Set(schemes.map(s=>s.category||"General"))].sort().map(c=><option key={c} value={c}>{c}</option>)}</select>
+          </div>
+          <div style={{fontSize:12,color:IC.muted,marginBottom:10}}>Showing {Math.min(showCount,fil.length)} of {fil.length}</div>
+          <div style={{display:"flex",flexDirection:"column",gap:8}}>
+            {fil.slice(0,showCount).map((s,i)=>{const src=s._src_label||"?";const srcC=srcColors[src]||IC.orange;const u=safeUrl(s);return(<ICard key={i} style={{padding:12,borderLeft:`3px solid ${srcC}`}}><div style={{display:"flex",gap:10,alignItems:"flex-start"}}><div style={{flex:1}}><div style={{display:"flex",alignItems:"center",gap:7,marginBottom:4,flexWrap:"wrap"}}><span style={{fontWeight:700,fontSize:13,color:IC.text}}>{s.name}</span><IBadge label={s.category||"General"} color={srcC} small/><IBadge label={src} color={srcC} small/></div>{s.benefit&&<div style={{fontSize:12,color:"#166534",fontWeight:600,background:"#f0fdf4",borderRadius:5,padding:"2px 8px",display:"inline-block",marginBottom:3}}>💰 {s.benefit}</div>}{s.eligibility&&<div style={{fontSize:11,color:IC.muted}}>Who: {s.eligibility?.slice(0,100)}</div>}{!s.benefit&&s.description&&<div style={{fontSize:11,color:IC.muted}}>{s.description?.slice(0,120)}</div>}</div>{u&&<a href={u} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()} style={{fontSize:11,color:srcC,fontWeight:700,flexShrink:0,whiteSpace:"nowrap",textDecoration:"none"}}>Visit ↗</a>}</div></ICard>);})}
+          </div>
+          {fil.length>showCount&&<div style={{textAlign:"center",marginTop:14}}><button onClick={()=>setShowCount(c=>c+50)} style={{background:"white",border:`1.5px solid ${IC.border}`,borderRadius:10,padding:"10px 28px",fontSize:13,fontWeight:700,color:IC.text,cursor:"pointer"}}>Show more ({fil.length-showCount} remaining)</button></div>}
+        </div>);
+      })()}
     </div>
   );
 }
+
 export default function App() {
   const [tab, setTab]           = useState("dashboard");
   const [agg, setAgg]           = useState(null);
@@ -1418,15 +1195,16 @@ export default function App() {
         <div style={{ display:"flex", padding:"0 28px", borderTop:"1px solid #f1f5f9" }}>
           {TABS.map(t => (
             <button key={t.id} onClick={() => setTab(t.id)} style={{
-              background: t.highlight&&tab===t.id?"linear-gradient(135deg,#f97316,#ea580c)":t.highlight?"#fff7ed":"transparent",
-              borderBottom: !t.highlight&&tab===t.id?"2.5px solid #f97316":!t.highlight?"2.5px solid transparent":"none",
-              border: t.highlight?"1.5px solid #fed7aa":"none",
-              borderRadius: t.highlight?"8px":0, margin: t.highlight?"6px 4px":0,
-              padding: t.highlight?"7px 16px":"11px 18px",
-              fontWeight: tab===t.id?700:500,
-              color: t.highlight&&tab===t.id?"white":t.highlight?"#f97316":tab===t.id?"#f97316":"#6b7280",
+              background: t.highlight && tab===t.id ? "linear-gradient(135deg,#f97316,#ea580c)" : t.highlight ? "#fff7ed" : "transparent",
+              borderBottom: !t.highlight && tab===t.id ? "2.5px solid #f97316" : !t.highlight ? "2.5px solid transparent" : "none",
+              border: t.highlight ? "1.5px solid #fed7aa" : "none",
+              borderRadius: t.highlight ? "8px" : 0,
+              margin: t.highlight ? "6px 4px" : 0,
+              padding: t.highlight ? "7px 16px" : "11px 18px",
+              fontWeight: tab===t.id ? 700 : 500,
+              color: t.highlight && tab===t.id ? "white" : t.highlight ? "#f97316" : tab===t.id ? "#f97316" : "#6b7280",
               fontSize:13, display:"flex", alignItems:"center", gap:6,
-              cursor:"pointer", transition:"all .15s",
+              transition:"all .15s",
             }}>
               <span>{t.icon}</span> {t.label}
               {t.badge ? (
