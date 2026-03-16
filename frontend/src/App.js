@@ -6,7 +6,7 @@
  * 3. Jan Soochna & MyScheme scrapers fixed with better API endpoints + fallback
  */
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import axios from "axios";
 import InsightsEngine from "./InsightsEngine";
 import {
@@ -63,6 +63,68 @@ const timeAgo = iso => {
   return `${Math.floor(s/3600)}h ago`;
 };
 const palColor = i => PALETTE[i % PALETTE.length];
+
+// ── safeUrl — never produce a 404 link ───────────────────────────────────────
+const DEAD_URLS = [
+  "https://jansoochna.rajasthan.gov.in/Scheme",
+  "https://jansoochna.rajasthan.gov.in/Scheme/",
+  "https://rajras.in", "https://rajras.in/",
+  "https://www.myscheme.gov.in", "https://myscheme.gov.in",
+];
+const safeUrl = (s) => {
+  if (!s) return null;
+  const u = s.apply_url || s.url || "";
+  if (!u || DEAD_URLS.includes(u.replace(/\/$/, ""))) {
+    if (s._src === "jansoochna" || (s.source||"").includes("jansoochna"))
+      return "https://jansoochna.rajasthan.gov.in/";
+    if (s._src === "myscheme" || (s.source||"").includes("myscheme"))
+      return "https://www.myscheme.gov.in/search?q=" + encodeURIComponent((s.name||"").slice(0,50));
+    if (s._src === "rajras" || (s.source||"").includes("rajras"))
+      return "https://rajras.in/ras/pre/rajasthan/adm/schemes/";
+    return null;
+  }
+  return u || null;
+};
+
+// ── InfoTip — ℹ️ hover tooltip ────────────────────────────────────────────────
+function InfoTip({ text }) {
+  const [show, setShow] = useState(false);
+  return (
+    <span style={{ position:"relative", display:"inline-flex", alignItems:"center", marginLeft:4 }}>
+      <span
+        onMouseEnter={() => setShow(true)}
+        onMouseLeave={() => setShow(false)}
+        style={{
+          width:16, height:16, borderRadius:"50%",
+          background: show ? "#3b82f6" : "#e2e8f0",
+          color: show ? "white" : "#6b7280",
+          fontSize:10, fontWeight:800, lineHeight:"16px", textAlign:"center",
+          display:"inline-block", cursor:"help", userSelect:"none",
+          transition:"background 0.15s", flexShrink:0,
+        }}
+      >i</span>
+      {show && (
+        <div style={{
+          position:"absolute", left:20, top:"50%", transform:"translateY(-50%)",
+          background:"#1e293b", color:"white", borderRadius:9,
+          padding:"10px 13px", fontSize:12, lineHeight:1.55,
+          width:260, zIndex:9999, pointerEvents:"none",
+          boxShadow:"0 8px 24px rgba(0,0,0,0.25)",
+        }}>
+          {text}
+          <div style={{
+            position:"absolute", right:"100%", top:"50%", transform:"translateY(-50%)",
+            width:0, height:0,
+            borderTop:"5px solid transparent",
+            borderBottom:"5px solid transparent",
+            borderRight:"6px solid #1e293b",
+          }}/>
+        </div>
+      )}
+    </span>
+  );
+}
+
 
 // ── BUG FIX 2: Correct URL resolver — scheme-specific, not generic domain ────
 const resolveSchemeUrl = (scheme) => {
@@ -175,12 +237,48 @@ function DashboardTab({ agg, srcStatus, onScrapeAll, onScrapeOne, scraping, budg
 
   return (
     <div className="fadeup">
-      <h1 style={{ fontSize:29, fontWeight:900, color:"#0f172a", marginBottom:3, letterSpacing:"-0.3px" }}>
-        Namaste, <span style={{ color:"#f97316" }}>Mukhyamantri Ji</span> 🙏
-      </h1>
+      <div style={{ display:"flex", alignItems:"center", marginBottom:3 }}>
+        <h1 style={{ fontSize:29, fontWeight:900, color:"#0f172a", margin:0, letterSpacing:"-0.3px" }}>Namaste, <span style={{ color:"#f97316" }}>Mukhyamantri Ji</span> 🙏</h1>
+        <InfoTip text="KPIs and charts are built from live-scraped data. Every number comes from the /aggregate API which merges all 4 scrapers. Use ⚡ Scrape Now to refresh."/>
+      </div>
       <p style={{ color:"#6b7280", fontSize:13, marginBottom:16 }}>
         All figures verified from official sources · Budget 2025-26 · JJM MIS · PRS India
       </p>
+
+      {/* ── Live Data Summary Banner ── */}
+      <div style={{
+        background:"linear-gradient(135deg,#fff7ed,#fffbeb,#f0f9ff)",
+        border:"1.5px solid #fed7aa", borderRadius:14,
+        padding:"14px 18px", marginBottom:20,
+      }}>
+        <div style={{ display:"flex", alignItems:"center", gap:7, marginBottom:10 }}>
+          <span style={{ fontSize:15 }}>📊</span>
+          <span style={{ fontWeight:800, fontSize:14, color:"#1a1a2e" }}>Live Data Summary</span>
+          <InfoTip text="Every number here is computed live from the current scrape. Hover any ℹ️ icon to see exactly where the data comes from."/>
+        </div>
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:10 }}>
+          {[
+            { icon:"📋", val:kpis.total_schemes,        label:"schemes scraped",  color:"#f97316", bg:"#fff7ed",
+              tip:"Total scheme records from RajRAS (HTML scrape) + Jan Soochna (JSON API) + MyScheme (REST API)." },
+            { icon:"🏛️", val:kpis.total_portals,        label:"IGOD portals",     color:"#3b82f6", bg:"#eff6ff",
+              tip:"Government portals listed on igod.gov.in/sg/RJ/SPMA/organizations — each is a separate Rajasthan govt website." },
+            { icon:"🗂️", val:kpis.unique_categories,    label:"categories",       color:"#10b981", bg:"#f0fdf4",
+              tip:"Unique scheme categories found. Derived by keyword matching on scheme names — not from any API field directly." },
+            { icon:"✅", val:`${kpis.sources_live}/4`,  label:"sources online",   color:"#8b5cf6", bg:"#faf5ff",
+              tip:"Live scrapers out of 4 total (IGOD, RajRAS, Jan Soochna, MyScheme). 4/4 = all portals responded." },
+          ].map((item, i) => (
+            <div key={i} style={{ background:item.bg, border:`1px solid ${item.color}25`, borderRadius:10, padding:"10px 12px" }}>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:4 }}>
+                <span style={{ fontSize:18 }}>{item.icon}</span>
+                <InfoTip text={item.tip}/>
+              </div>
+              <div style={{ fontSize:22, fontWeight:900, color:item.color, lineHeight:1 }}>{item.val}</div>
+              <div style={{ fontSize:10, color:"#6b7280", marginTop:3 }}>{item.label}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
       <div style={{ background:"linear-gradient(135deg,#eff6ff 0%,#f0f9ff 100%)",
         border:"1.5px solid #bfdbfe", borderRadius:12, padding:"11px 18px", marginBottom:24, lineHeight:1.7 }}>
         <div style={{ fontSize:13 }}>
@@ -306,182 +404,6 @@ function DashboardTab({ agg, srcStatus, onScrapeAll, onScrapeOne, scraping, budg
   );
 }
 
-// ── Scheme Detail Panel ───────────────────────────────────────────────────────
-function SchemeDetailPanel({ scheme, onClose }) {
-  if (!scheme) return null;
-  const srcMeta = SRC[scheme._src] || SRC.myscheme;
-  // BUG FIX 2: Use resolveSchemeUrl for specific scheme page
-  const sourceUrl = resolveSchemeUrl(scheme);
-
-  const beneficiaries = scheme.beneficiary_count || scheme.beneficiaries || "Open to all";
-  const budget        = scheme.budget || "As per allocation";
-  const launchYear    = scheme.launched
-    ? String(scheme.launched).match(/\d{4}/)?.[0] || scheme.launched
-    : (scheme.scraped_at?.slice(0,4) || "—");
-  const districts     = scheme.districts || "All 33";
-  const progressPct   = scheme.progress_pct ?? (scheme.status==="Active"?70:40);
-  const progressLabel = scheme.progress || `${progressPct}%`;
-
-  const H=54, W=120;
-  const base = typeof beneficiaries==="number" ? beneficiaries : 60;
-  const rawPts = [0.55,0.63,0.70,0.78,0.85,0.93,1.0].map(f=>base*f);
-  const maxV = Math.max(...rawPts);
-  const sparkPts = rawPts.map((v,i)=>{
-    const x=(i/(rawPts.length-1))*W;
-    const y=H-(v/maxV)*(H-4)-2;
-    return `${x},${y}`;
-  }).join(" ");
-
-  const keyFacts = [
-    scheme.eligibility,
-    scheme.objective,
-    scheme.description&&scheme.benefit?scheme.description:null,
-    (scheme.department||scheme.ministry)?`Managed by: ${scheme.department||scheme.ministry}`:null,
-  ].filter(Boolean);
-
-  const Label = ({children}) => (
-    <div style={{ fontSize:10, fontWeight:700, color:"#9ca3af", letterSpacing:"0.08em", marginBottom:6, textTransform:"uppercase" }}>{children}</div>
-  );
-
-  return (
-    <>
-      <div onClick={onClose} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.3)", zIndex:1000, backdropFilter:"blur(2px)" }}/>
-      <div style={{ position:"fixed", top:0, right:0, bottom:0, width:500, background:"white",
-        zIndex:1001, overflowY:"auto", boxShadow:"-6px 0 48px rgba(0,0,0,0.15)",
-        display:"flex", flexDirection:"column", animation:"slideInRight 0.2s ease" }}>
-        <style>{`@keyframes slideInRight { from{transform:translateX(50px);opacity:0} to{transform:translateX(0);opacity:1} }`}</style>
-
-        <div style={{ padding:"22px 24px 18px", borderBottom:"1px solid #f0f2f5" }}>
-          <div style={{ display:"flex", alignItems:"flex-start", gap:14 }}>
-            <div style={{ width:50, height:50, borderRadius:12, flexShrink:0,
-              background:`${srcMeta.color}18`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:24 }}>
-              {CAT_ICON[scheme.category]||"📋"}
-            </div>
-            <div style={{ flex:1 }}>
-              <div style={{ fontWeight:800, fontSize:16, color:"#111827", lineHeight:1.35 }}>{scheme.name}</div>
-              {scheme.name_hi&&<div style={{ fontSize:12, color:"#9ca3af", marginTop:1 }}>{scheme.name_hi}</div>}
-              <div style={{ fontSize:11.5, color:"#9ca3af", marginTop:3 }}>
-                {scheme.category}{scheme.subcategory?` · ${scheme.subcategory}`:""}
-                {" · "}<span style={{ color:srcMeta.color, fontWeight:600 }}>{scheme._src_label||srcMeta.label}</span>
-              </div>
-            </div>
-            <button onClick={onClose} style={{ border:"none", background:"#f3f4f6", borderRadius:8,
-              width:30, height:30, cursor:"pointer", fontSize:15, display:"flex",
-              alignItems:"center", justifyContent:"center", flexShrink:0 }}>✕</button>
-          </div>
-        </div>
-
-        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", borderBottom:"1px solid #f0f2f5" }}>
-          <div style={{ padding:"18px 24px", borderRight:"1px solid #f0f2f5" }}>
-            <Label>Beneficiaries</Label>
-            <div style={{ fontSize:20, fontWeight:800, color:srcMeta.color }}>
-              {typeof beneficiaries==="number"?beneficiaries.toLocaleString("en-IN"):beneficiaries}
-            </div>
-          </div>
-          <div style={{ padding:"18px 24px" }}>
-            <Label>Budget (2025-26)</Label>
-            <div style={{ fontSize:20, fontWeight:800, color:"#111827" }}>{budget}</div>
-          </div>
-        </div>
-
-        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", borderBottom:"1px solid #f0f2f5" }}>
-          <div style={{ padding:"18px 24px", borderRight:"1px solid #f0f2f5" }}>
-            <Label>Launch</Label>
-            <div style={{ fontSize:20, fontWeight:800, color:"#111827" }}>{launchYear}</div>
-          </div>
-          <div style={{ padding:"18px 24px" }}>
-            <Label>Districts</Label>
-            <div style={{ fontSize:20, fontWeight:800, color:"#111827" }}>{districts}</div>
-          </div>
-        </div>
-
-        <div style={{ padding:"20px 24px", borderBottom:"1px solid #f0f2f5" }}>
-          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:14 }}>
-            <span style={{ fontSize:13, fontWeight:500, color:"#374151" }}>Implementation Progress</span>
-            <div style={{ position:"relative", width:56, height:56 }}>
-              <svg width="56" height="56" style={{ transform:"rotate(-90deg)" }}>
-                <circle cx="28" cy="28" r="22" fill="none" stroke="#e5e7eb" strokeWidth="5"/>
-                <circle cx="28" cy="28" r="22" fill="none" stroke={srcMeta.color} strokeWidth="5"
-                  strokeDasharray={`${(progressPct/100)*138.2} 138.2`} strokeLinecap="round"/>
-              </svg>
-              <div style={{ position:"absolute", inset:0, display:"flex", alignItems:"center", justifyContent:"center",
-                fontSize:11, fontWeight:800, color:srcMeta.color }}>{progressLabel}</div>
-            </div>
-          </div>
-          <div style={{ background:"#e5e7eb", borderRadius:4, height:7, overflow:"hidden", marginBottom:6 }}>
-            <div style={{ width:`${Math.min(progressPct,100)}%`, height:"100%", background:srcMeta.color, borderRadius:4 }}/>
-          </div>
-          <div style={{ display:"flex", justifyContent:"space-between", fontSize:11, color:"#9ca3af" }}>
-            <span>0%</span>
-            <span style={{ color:"#10b981", fontWeight:600 }}>✓ On Track</span>
-            <span>100%</span>
-          </div>
-        </div>
-
-        {(scheme.benefit||scheme.description)&&(
-          <div style={{ padding:"18px 24px", borderBottom:"1px solid #f0f2f5" }}>
-            <Label>Coverage / Benefits</Label>
-            <div style={{ fontSize:14, color:"#111827", lineHeight:1.6 }}>{scheme.benefit||scheme.description}</div>
-          </div>
-        )}
-
-        {keyFacts.length>0&&(
-          <div style={{ padding:"18px 24px", borderBottom:"1px solid #f0f2f5" }}>
-            <Label>Key Facts</Label>
-            <div style={{ fontSize:13, color:"#374151", lineHeight:1.65 }}>
-              {keyFacts.join(". ").replace(/\.\./g,".")}
-            </div>
-          </div>
-        )}
-
-        {scheme.tags?.length>0&&(
-          <div style={{ padding:"14px 24px", borderBottom:"1px solid #f0f2f5", display:"flex", gap:6, flexWrap:"wrap" }}>
-            {scheme.tags.map((t,i)=>(
-              <span key={i} style={{ background:`${srcMeta.color}12`, color:srcMeta.color,
-                border:`1px solid ${srcMeta.color}25`, borderRadius:20,
-                padding:"3px 11px", fontSize:11, fontWeight:600 }}>{t}</span>
-            ))}
-          </div>
-        )}
-
-        <div style={{ padding:"16px 24px", borderBottom:"1px solid #f0f2f5", background:"#fafafa" }}>
-          <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:4 }}>
-            <span style={{ fontSize:9.5, fontWeight:700, color:"#9ca3af", letterSpacing:"0.08em", textTransform:"uppercase" }}>
-              Data Source
-            </span>
-          </div>
-          <div style={{ fontSize:12.5, color:"#374151", fontWeight:500 }}>
-            {scheme.source||srcMeta.url}
-          </div>
-          {/* Show the actual URL it will open */}
-          {sourceUrl&&sourceUrl!=="#"&&(
-            <div style={{ fontSize:11, color:"#9ca3af", marginTop:3,
-              overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
-              {sourceUrl}
-            </div>
-          )}
-        </div>
-
-        <div style={{ padding:"16px 24px 28px" }}>
-          <a href={sourceUrl} target="_blank" rel="noreferrer" style={{
-            display:"block", textAlign:"center", background:srcMeta.color, color:"white",
-            borderRadius:10, padding:"13px 20px", fontSize:14, fontWeight:700,
-            cursor:"pointer", textDecoration:"none",
-            boxShadow:`0 4px 16px ${srcMeta.color}45`,
-          }}>
-            Know More ↗
-          </a>
-          {sourceUrl===SRC[scheme._src]?.url&&(
-            <div style={{ textAlign:"center", fontSize:11, color:"#9ca3af", marginTop:8 }}>
-              Opens {srcMeta.label} home — scheme-specific URL not available
-            </div>
-          )}
-        </div>
-      </div>
-    </>
-  );
-}
-
 // ── Scheme Detail Panel ─────────────────────────────────────────────────────
 function SchemeDetailPanel({ scheme, onClose }) {
   if (!scheme) return null;
@@ -507,8 +429,10 @@ function SchemeDetailPanel({ scheme, onClose }) {
       ? `https://jansoochna.rajasthan.gov.in/Scheme`
       : `https://${srcMeta.url}`);
 
-  const beneficiaries = scheme.beneficiary_count || scheme.beneficiaries || "Open to all";
-  const budget        = scheme.budget || "As per govt allocation";
+  const beneficiaries = scheme.beneficiary_display
+    || (scheme.beneficiary_count ? String(scheme.beneficiary_count) : null)
+    || null;
+  const budget = scheme.budget_amount || null;
   const launchYear    = scheme.launched
     ? String(scheme.launched).match(/\d{4}/)?.[0] || scheme.launched
     : scheme.scraped_at?.slice(0, 4) || "—";
@@ -788,9 +712,12 @@ function SchemesTab({ agg, onScrapeAll }) {
 
   return (
     <div className="fadeup">
-      <h2 style={{ fontSize:24, fontWeight:900, marginBottom:4 }}>
+      <div style={{ display:"flex", alignItems:"center", marginBottom:4 }}>
+        <h2 style={{ fontSize:24, fontWeight:900, margin:0 }}>
         Government Schemes — <span style={{ color:"#f97316" }}>Real Data</span>
       </h2>
+        <InfoTip text="Schemes from 3 sources: RajRAS (HTML scrape → name, eligibility, benefit), Jan Soochna (JSON API → name, dept, beneficiary count), MyScheme (REST API → name, ministry, tags, description). Categories are keyword-derived."/>
+      </div>
       <p style={{ color:"#6b7280", fontSize:13, marginBottom:20 }}>
         {schemes.length} schemes scraped live from RajRAS · Jan Soochna · MyScheme.
         Click any card for full details &amp; source link.
@@ -904,8 +831,8 @@ function SchemesTab({ agg, onScrapeAll }) {
               <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr",
                 gap:4, marginBottom:10 }}>
                 {[
-                  { label:"BENEFICIARIES", val:scheme.beneficiary_count||scheme.beneficiaries||null, color:srcMeta.color },
-                  { label:"BUDGET",        val:scheme.budget||null,                                  color:"#1f2937" },
+                  { label:"BENEFICIARIES", val:scheme.beneficiary_display||(scheme.beneficiary_count?String(scheme.beneficiary_count):null), color:srcMeta.color },
+                  { label:"BUDGET",        val:scheme.budget_amount||null,                           color:"#1f2937" },
                   { label:"PROGRESS",      val:scheme.progress||(scheme.progress_pct!=null?`${scheme.progress_pct}%`:null), color:"#10b981" },
                 ].map((stat,j) => (
                   <div key={j}>
@@ -970,9 +897,12 @@ function PortalsTab({ agg, onScrapeAll }) {
   const totalListed=portals.find(p=>p.total_portals_listed)?.total_portals_listed||"";
   return (
     <div className="fadeup">
-      <h2 style={{ fontSize:24, fontWeight:900, marginBottom:4 }}>
+      <div style={{ display:"flex", alignItems:"center", marginBottom:4 }}>
+        <h2 style={{ fontSize:24, fontWeight:900, margin:0 }}>
         Government Portals — <span style={{ color:"#f97316" }}>IGOD Directory</span>
       </h2>
+        <InfoTip text="Scraped from igod.gov.in/sg/RJ/SPMA/organizations — official IGOD directory for Rajasthan. Each card shows the portal name, domain, and meta description from that portal's own homepage."/>
+      </div>
       <p style={{ color:"#6b7280", fontSize:13, marginBottom:4 }}>
         Source: igod.gov.in/sg/RJ/SPMA/organizations{totalListed?` · ${totalListed}`:""}
       </p>
@@ -1067,10 +997,13 @@ function DistrictsTab({ agg, onScrapeAll }) {
       <div style={{ display:"flex", alignItems:"flex-start",
         justifyContent:"space-between", marginBottom:4, flexWrap:"wrap", gap:10 }}>
         <div>
-          <h2 style={{ fontSize:24, fontWeight:900, marginBottom:3 }}>
-            District JJM Coverage —{" "}
-            <span style={{ color:"#f97316" }}>Live from ejalshakti.gov.in</span>
-          </h2>
+          <div style={{ display:"flex", alignItems:"center", marginBottom:3 }}>
+            <h2 style={{ fontSize:24, fontWeight:900, margin:0 }}>
+              District JJM Coverage —{" "}
+              <span style={{ color:"#f97316" }}>Live from ejalshakti.gov.in</span>
+            </h2>
+            <InfoTip text="Coverage % scraped live from JJM MIS (ejalshakti.gov.in) — Jal Jeevan Mission tracking system. Shows % of rural households with functional tap water connections. Scheme counts are derived from scraped schemes data."/>
+          </div>
           <p style={{ color:"#6b7280", fontSize:13, margin:0 }}>
             Tap water household coverage · Jal Jeevan Mission MIS
           </p>
@@ -1260,9 +1193,12 @@ function AlertsTab({ agg, onScrapeAll }) {
   const filtered=filter==="All"?alerts:alerts.filter(a=>a.severity===filter);
   return (
     <div className="fadeup">
-      <h2 style={{ fontSize:24, fontWeight:900, marginBottom:4 }}>
+      <div style={{ display:"flex", alignItems:"center", marginBottom:4 }}>
+        <h2 style={{ fontSize:24, fontWeight:900, margin:0 }}>
         Intelligence Alerts — <span style={{ color:"#f97316" }}>Source-Cited</span>
       </h2>
+        <InfoTip text="Alerts are auto-generated by the backend from scraped data patterns — not hardcoded. Each alert cites actual scheme counts and categories found during scraping."/>
+      </div>
       <p style={{ color:"#6b7280", fontSize:13, marginBottom:20 }}>
         Every alert generated from live scraped data · {alerts.length} alerts total
       </p>
