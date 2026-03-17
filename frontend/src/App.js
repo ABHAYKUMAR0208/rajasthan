@@ -86,6 +86,20 @@ const safeUrl = (s) => {
   return u || null;
 };
 
+const getProgressPct = (scheme) => {
+  if (typeof scheme?.progress_pct === "number" && Number.isFinite(scheme.progress_pct)) {
+    return Math.max(0, Math.min(100, scheme.progress_pct));
+  }
+  if (typeof scheme?.progress === "string") {
+    const m = scheme.progress.match(/(\d+(?:\.\d+)?)\s*%?/);
+    if (m) {
+      const n = parseFloat(m[1]);
+      if (Number.isFinite(n)) return Math.max(0, Math.min(100, n));
+    }
+  }
+  return null;
+};
+
 // ── InfoTip — ℹ️ hover tooltip ────────────────────────────────────────────────
 function InfoTip({ text }) {
   const [show, setShow] = useState(false);
@@ -427,7 +441,7 @@ function SchemeDetailPanel({ scheme, onClose }) {
     schemeUrl ||
     (scheme._src === "jansoochna"
       ? `https://jansoochna.rajasthan.gov.in/Scheme`
-      : `https://${srcMeta.url}`);
+      : srcMeta.url);
 
   const beneficiaries = scheme.beneficiary_display
     || (scheme.beneficiary_count ? String(scheme.beneficiary_count) : null)
@@ -437,8 +451,9 @@ function SchemeDetailPanel({ scheme, onClose }) {
     ? String(scheme.launched).match(/\d{4}/)?.[0] || scheme.launched
     : scheme.scraped_at?.slice(0, 4) || "—";
   const districts     = scheme.districts || "All 33";
-  const progressPct   = scheme.progress_pct ?? (scheme.status === "Active" ? 70 : 40);
-  const progressLabel = scheme.progress || `${progressPct}%`;
+  const progressPct = getProgressPct(scheme);
+  const progressLabel = progressPct != null ? `${progressPct}%` : "N/A";
+  const progressColor = progressPct != null ? srcMeta.color : "#9ca3af";
 
   const H = 54, W = 120;
   const rawPts = [0.55, 0.63, 0.70, 0.78, 0.85, 0.93, 1.0].map(f => 60 * f);
@@ -538,37 +553,61 @@ function SchemeDetailPanel({ scheme, onClose }) {
 
         {/* Progress */}
         <div style={{ padding:"20px 24px", borderBottom:"1px solid #f0f2f5" }}>
-          <div style={{ display:"flex", alignItems:"center",
-            justifyContent:"space-between", marginBottom:14 }}>
-            <span style={{ fontSize:13, fontWeight:500, color:"#374151" }}>
-              Implementation Progress
-            </span>
-            <div style={{ position:"relative", width:56, height:56 }}>
-              <svg width="56" height="56" style={{ transform:"rotate(-90deg)" }}>
-                <circle cx="28" cy="28" r="22" fill="none" stroke="#e5e7eb" strokeWidth="5"/>
-                <circle cx="28" cy="28" r="22" fill="none" stroke={srcMeta.color}
-                  strokeWidth="5"
-                  strokeDasharray={`${(progressPct/100)*138.2} 138.2`}
-                  strokeLinecap="round"/>
-              </svg>
-              <div style={{ position:"absolute", inset:0, display:"flex",
-                alignItems:"center", justifyContent:"center",
-                fontSize:11, fontWeight:800, color:srcMeta.color }}>
-                {progressLabel}
+          {progressPct != null ? (
+            <>
+              <div style={{ display:"flex", alignItems:"center",
+                justifyContent:"space-between", marginBottom:14 }}>
+                <span style={{ fontSize:13, fontWeight:500, color:"#374151" }}>
+                  Implementation Progress
+                </span>
+                <div style={{ position:"relative", width:56, height:56 }}>
+                  <svg width="56" height="56" style={{ transform:"rotate(-90deg)" }}>
+                    <circle cx="28" cy="28" r="22" fill="none" stroke="#e5e7eb" strokeWidth="5"/>
+                    <circle cx="28" cy="28" r="22" fill="none"
+                      strokeWidth="5"
+                      stroke={progressColor}
+                      strokeDasharray={`${((progressPct || 0)/100)*138.2} 138.2`}
+                      strokeLinecap="round"/>
+                  </svg>
+                  <div style={{ position:"absolute", inset:0, display:"flex",
+                    alignItems:"center", justifyContent:"center",
+                    fontSize:11, fontWeight:800, color:progressColor }}>
+                    {progressLabel}
+                  </div>
+                </div>
+              </div>
+              <div style={{ background:"#e5e7eb", borderRadius:4, height:7,
+                overflow:"hidden", marginBottom:6 }}>
+                <div style={{ width:`${Math.min(progressPct || 0,100)}%`, height:"100%",
+                  background:progressColor, borderRadius:4 }}/>
+              </div>
+              <div style={{ display:"flex", justifyContent:"space-between",
+                fontSize:11, color:"#9ca3af" }}>
+                <span>0%</span>
+                <span style={{ color:"#10b981", fontWeight:600 }}>✓ On Track</span>
+                <span>100%</span>
+              </div>
+              {scheme.progress_source && (
+                <div style={{ marginTop:8, fontSize:11.5, color:"#6b7280", lineHeight:1.4 }}>
+                  Source signal: {scheme.progress_source}
+                </div>
+              )}
+            </>
+          ) : (
+            <div style={{
+              background:"#f9fafb",
+              border:"1px solid #e5e7eb",
+              borderRadius:10,
+              padding:"12px 14px",
+            }}>
+              <div style={{ fontSize:13, fontWeight:700, color:"#374151", marginBottom:4 }}>
+                Implementation Progress
+              </div>
+              <div style={{ fontSize:12.5, color:"#6b7280" }}>
+                No official implementation progress is available from current source data.
               </div>
             </div>
-          </div>
-          <div style={{ background:"#e5e7eb", borderRadius:4, height:7,
-            overflow:"hidden", marginBottom:6 }}>
-            <div style={{ width:`${Math.min(progressPct,100)}%`, height:"100%",
-              background:srcMeta.color, borderRadius:4 }}/>
-          </div>
-          <div style={{ display:"flex", justifyContent:"space-between",
-            fontSize:11, color:"#9ca3af" }}>
-            <span>0%</span>
-            <span style={{ color:"#10b981", fontWeight:600 }}>✓ On Track</span>
-            <span>100%</span>
-          </div>
+          )}
         </div>
 
         {/* 7-Month Trend sparkline */}
@@ -653,14 +692,46 @@ function SchemeDetailPanel({ scheme, onClose }) {
 }
 
 // ── Schemes Tab ───────────────────────────────────────────────────────────────
-function SchemesTab({ agg, onScrapeAll }) {
+function SchemesTab({ agg, onScrapeAll, rajrasData }) {
   const [search, setSearch]     = useState("");
   const [cat, setCat]           = useState("all");
   const [src, setSrc]           = useState("all");
   const [selected, setSelected] = useState(null);
 
-  if (!agg?.schemes?.length) return <EmptyState onScrape={onScrapeAll}/>;
-  const { schemes } = agg;
+  const aggregateSchemes = agg?.schemes || [];
+  const normalizedRajras = useMemo(
+    () =>
+      (rajrasData || []).map((s, i) => ({
+        id: s.id || `rajras_file_${i + 1}`,
+        name: s.name || "Untitled Scheme",
+        category: s.category || "General",
+        description: s.description || "",
+        benefit: Array.isArray(s.benefits) ? s.benefits.join(" | ") : (s.benefits || ""),
+        eligibility: Array.isArray(s.eligibility) ? s.eligibility.join(" | ") : (s.eligibility || ""),
+        documents_required: Array.isArray(s.documents_required)
+          ? s.documents_required.join(" | ")
+          : (s.documents_required || ""),
+        headings: s.headings || null,
+        progress_pct: typeof s.progress_pct === "number" ? s.progress_pct : null,
+        progress: s.progress || null,
+        progress_source: s.progress_source || null,
+        progress_updated_at: s.progress_updated_at || null,
+        source: s.source || "RajRAS",
+        url: s.url || "",
+        status: "Active",
+        _src: "rajras",
+        _src_label: "RajRAS",
+        _src_url: "rajras.in",
+      })),
+    [rajrasData]
+  );
+  const schemes = useMemo(() => {
+    if (!normalizedRajras.length) return aggregateSchemes;
+    const withoutRajras = aggregateSchemes.filter(s => s._src !== "rajras");
+    return [...normalizedRajras, ...withoutRajras];
+  }, [aggregateSchemes, normalizedRajras]);
+
+  if (!schemes.length) return <EmptyState onScrape={onScrapeAll}/>;
 
   // Pill → match substring that covers all 3 scrapers' category strings:
   // RajRAS cats:      Agriculture, Health, Education, Social Welfare,
@@ -778,6 +849,7 @@ function SchemesTab({ agg, onScrapeAll }) {
         {filtered.map((scheme, i) => {
           const srcMeta    = SRC[scheme._src] || SRC.myscheme;
           const benefitText = scheme.benefit || scheme.description || "";
+          const cardProgressPct = getProgressPct(scheme);
           const launchYear  = scheme.launched
             ? String(scheme.launched).match(/\d{4}/)?.[0]
             : scheme.scraped_at?.slice(0,4) || null;
@@ -833,7 +905,7 @@ function SchemesTab({ agg, onScrapeAll }) {
                 {[
                   { label:"BENEFICIARIES", val:scheme.beneficiary_display||(scheme.beneficiary_count?String(scheme.beneficiary_count):null), color:srcMeta.color },
                   { label:"BUDGET",        val:scheme.budget_amount||null,                           color:"#1f2937" },
-                  { label:"PROGRESS",      val:scheme.progress||(scheme.progress_pct!=null?`${scheme.progress_pct}%`:null), color:"#10b981" },
+                  { label:"PROGRESS",      val:cardProgressPct!=null?`${cardProgressPct}%`:null, color:"#10b981" },
                 ].map((stat,j) => (
                   <div key={j}>
                     <div style={{ fontSize:9, fontWeight:700, color:"#9ca3af",
@@ -854,10 +926,10 @@ function SchemesTab({ agg, onScrapeAll }) {
                 overflow:"hidden", marginBottom:10 }}>
                 <div style={{
                   height:"100%",
-                  width: scheme.progress_pct!=null
-                    ? `${Math.min(scheme.progress_pct,100)}%`
-                    : (scheme.status==="Active" ? "70%" : "40%"),
-                  background:`linear-gradient(90deg,${srcMeta.color},${srcMeta.color}99)`,
+                  width: `${Math.min(cardProgressPct || 0,100)}%`,
+                  background: cardProgressPct!=null
+                    ? `linear-gradient(90deg,${srcMeta.color},${srcMeta.color}99)`
+                    : "#d1d5db",
                   borderRadius:4,
                 }}/>
               </div>
@@ -1381,6 +1453,7 @@ export default function App() {
   const [scrapeLog,setLog]     = useState([]);
   const [budget,setBudget]     = useState(null);
   const [budgetLoading,setBudgetLoading] = useState(false);
+  const [rajrasData, setRajrasData] = useState([]);
 
   const addLog = useCallback((msg,type="info")=>{
     const ts=new Date().toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit",second:"2-digit"});
@@ -1392,12 +1465,14 @@ export default function App() {
   const poll = useCallback(async(silent=true)=>{
     if(!silent) setRef(true);
     try {
-      const [s,a]=await Promise.all([
+      const [s,a,rj]=await Promise.all([
         axios.get(`${API}/status`).catch(()=>null),
         axios.get(`${API}/aggregate`).catch(()=>null),
+        axios.get(`${API}/data/rajras`).catch(()=>null),
       ]);
       if(s) setStatus(s.data.sources||{});
       if(a) setAgg(a.data);
+      if (rj && Array.isArray(rj.data)) setRajrasData(rj.data);
       if(!silent) addLog("✅ Data refreshed","success");
     } catch(e){ if(!silent) addLog("❌ Refresh failed","error"); }
     if(!silent) setRef(false);
@@ -1596,7 +1671,7 @@ export default function App() {
           onScrapeAll={scrapeAll} onScrapeOne={scrapeOne}
           scraping={scraping} scrapingAll={scrapingAll} online={online}
           budget={budget} budgetLoading={budgetLoading}/>}
-        {tab==="schemes"&&<SchemesTab agg={agg} onScrapeAll={scrapeAll}/>}
+        {tab==="schemes"&&<SchemesTab agg={agg} rajrasData={rajrasData} onScrapeAll={scrapeAll}/>}
         {tab==="budget"&&<BudgetDataTab budget={budget} budgetLoading={budgetLoading}
           onRefresh={()=>{ setBudget(null); setBudgetLoading(true);
             fetch(`${API}/budget?refresh=true`).then(r=>r.json()).then(d=>{setBudget(d);setBudgetLoading(false);}).catch(()=>setBudgetLoading(false)); }}/>}
