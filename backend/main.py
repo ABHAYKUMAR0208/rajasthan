@@ -4,7 +4,9 @@ Every field served to the frontend comes directly from the scrapers.
 No hardcoded data anywhere in this file.
 """
 import asyncio, re, logging
+import json
 from datetime import datetime
+from pathlib import Path
 from typing import Optional
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -25,7 +27,8 @@ from contextlib import asynccontextmanager
 async def lifespan(app_: FastAPI):
     """Auto-scrape all sources + JJM districts on startup."""
     log.info("🚀 Startup: kicking off background scrape of all sources + JJM districts...")
-    asyncio.create_task(asyncio.gather(*[_run(sid, fn) for sid, fn in SCRAPERS.items()]))
+    async def _scrape_all(): await asyncio.gather(*[_run(sid, fn) for sid, fn in SCRAPERS.items()])
+    asyncio.create_task(_scrape_all())
 
     async def _fetch_jjm_startup():
         data = await asyncio.to_thread(scrape_jjm)
@@ -101,6 +104,22 @@ async def scrape_one(source_id: str):
     if source_id not in SCRAPERS:
         raise HTTPException(404, f"Unknown source: {source_id}")
     return await _run(source_id, SCRAPERS[source_id])
+
+@app.get("/data/rajras")
+def get_rajras_schemes():
+    data_path = Path(__file__).resolve().parent / "data" / "rajras_schemes.json"
+    if not data_path.exists():
+        raise HTTPException(404, "RajRAS dataset not found. Run rajras_full_scraper first.")
+    with data_path.open("r", encoding="utf-8") as f:
+        return json.load(f)
+
+@app.get("/data/jansoochna")
+def get_jansoochna_schemes():
+    data_path = Path(__file__).resolve().parent / "data" / "jansoochna_schemes.json"
+    if not data_path.exists():
+        raise HTTPException(404, "Jan Soochna dataset not found. Run jansoochna_full_scraper first.")
+    with data_path.open("r", encoding="utf-8") as f:
+        return json.load(f)
 
 @app.get("/data/{source_id}")
 def get_data(source_id: str, limit: Optional[int] = None):

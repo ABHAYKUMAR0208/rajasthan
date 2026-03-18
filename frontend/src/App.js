@@ -692,7 +692,7 @@ function SchemeDetailPanel({ scheme, onClose }) {
 }
 
 // ── Schemes Tab ───────────────────────────────────────────────────────────────
-function SchemesTab({ agg, onScrapeAll, rajrasData }) {
+function SchemesTab({ agg, onScrapeAll, rajrasData, jansoochnaData }) {
   const [search, setSearch]     = useState("");
   const [cat, setCat]           = useState("all");
   const [src, setSrc]           = useState("all");
@@ -725,11 +725,44 @@ function SchemesTab({ agg, onScrapeAll, rajrasData }) {
       })),
     [rajrasData]
   );
+  const normalizedJansoochna = useMemo(
+    () =>
+      (jansoochnaData || []).map((s, i) => ({
+        id: s.id || `jsp_file_${i + 1}`,
+        name: s.name || "Untitled Scheme",
+        category: s.category || "General Services",
+        description: s.description || "",
+        benefit: Array.isArray(s.benefits) ? s.benefits.join(" | ") : (s.benefits || ""),
+        eligibility: Array.isArray(s.eligibility) ? s.eligibility.join(" | ") : (s.eligibility || ""),
+        documents_required: Array.isArray(s.documents_required)
+          ? s.documents_required.join(" | ")
+          : (s.documents_required || ""),
+        department: s.department || null,
+        beneficiary_count: s.beneficiary_count || null,
+        headings: s.headings || null,
+        progress_pct: typeof s.progress_pct === "number" ? s.progress_pct : null,
+        progress: s.progress || null,
+        progress_source: s.progress_source || null,
+        progress_updated_at: s.progress_updated_at || null,
+        source: s.source || "Jan Soochna",
+        url: s.url || "",
+        status: "Active",
+        _src: "jansoochna",
+        _src_label: "Jan Soochna",
+        _src_url: "jansoochna.rajasthan.gov.in",
+      })),
+    [jansoochnaData]
+  );
   const schemes = useMemo(() => {
-    if (!normalizedRajras.length) return aggregateSchemes;
-    const withoutRajras = aggregateSchemes.filter(s => s._src !== "rajras");
-    return [...normalizedRajras, ...withoutRajras];
-  }, [aggregateSchemes, normalizedRajras]);
+    let result = aggregateSchemes;
+    if (normalizedRajras.length) {
+      result = [...normalizedRajras, ...result.filter(s => s._src !== "rajras")];
+    }
+    if (normalizedJansoochna.length) {
+      result = [...normalizedJansoochna, ...result.filter(s => s._src !== "jansoochna")];
+    }
+    return result;
+  }, [aggregateSchemes, normalizedRajras, normalizedJansoochna]);
 
   if (!schemes.length) return <EmptyState onScrape={onScrapeAll}/>;
 
@@ -1454,6 +1487,7 @@ export default function App() {
   const [budget,setBudget]     = useState(null);
   const [budgetLoading,setBudgetLoading] = useState(false);
   const [rajrasData, setRajrasData] = useState([]);
+  const [jansoochnaData, setJansoochnaData] = useState([]);
 
   const addLog = useCallback((msg,type="info")=>{
     const ts=new Date().toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit",second:"2-digit"});
@@ -1465,14 +1499,16 @@ export default function App() {
   const poll = useCallback(async(silent=true)=>{
     if(!silent) setRef(true);
     try {
-      const [s,a,rj]=await Promise.all([
+      const [s,a,rj,jsp]=await Promise.all([
         axios.get(`${API}/status`).catch(()=>null),
         axios.get(`${API}/aggregate`).catch(()=>null),
         axios.get(`${API}/data/rajras`).catch(()=>null),
+        axios.get(`${API}/data/jansoochna`).catch(()=>null),
       ]);
       if(s) setStatus(s.data.sources||{});
       if(a) setAgg(a.data);
       if (rj && Array.isArray(rj.data)) setRajrasData(rj.data);
+      if (jsp && Array.isArray(jsp.data)) setJansoochnaData(jsp.data);
       if(!silent) addLog("✅ Data refreshed","success");
     } catch(e){ if(!silent) addLog("❌ Refresh failed","error"); }
     if(!silent) setRef(false);
@@ -1671,7 +1707,7 @@ export default function App() {
           onScrapeAll={scrapeAll} onScrapeOne={scrapeOne}
           scraping={scraping} scrapingAll={scrapingAll} online={online}
           budget={budget} budgetLoading={budgetLoading}/>}
-        {tab==="schemes"&&<SchemesTab agg={agg} rajrasData={rajrasData} onScrapeAll={scrapeAll}/>}
+        {tab==="schemes"&&<SchemesTab agg={agg} rajrasData={rajrasData} jansoochnaData={jansoochnaData} onScrapeAll={scrapeAll}/>}
         {tab==="budget"&&<BudgetDataTab budget={budget} budgetLoading={budgetLoading}
           onRefresh={()=>{ setBudget(null); setBudgetLoading(true);
             fetch(`${API}/budget?refresh=true`).then(r=>r.json()).then(d=>{setBudget(d);setBudgetLoading(false);}).catch(()=>setBudgetLoading(false)); }}/>}
